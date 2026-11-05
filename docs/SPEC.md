@@ -48,6 +48,9 @@ The GujRERA Intelligence & Agentic Analytics Platform provides an institutional-
 13. As a risk analyst, I want multi-hop contagion risk tracing, so that if a project defaults, I can instantly identify other ongoing projects relying on the same structural engineer or architect.
 14. As a legal researcher, I want BM25 full-text search across all certified statutory PDF documents, so that I can pinpoint encumbrances, litigation clauses, or specific consultant names across thousands of filing pages.
 15. As a pipeline data engineer, I want the ingestion engine to be completely decoupled from downstream analytics through a canonical `RunReader` seam, so that changes in storage formats or compression do not break intelligence applications.
+16. As a quantitative researcher, I want statewide historical project registries and quarterly Form 3 filings stored as date-stamped, ZSTD-compressed Parquet datasets, so that I can perform zero-copy SQL analytics across years of disclosures in milliseconds using DuckDB.
+17. As an investment analyst inspecting a specific project, I want statutory project documents packaged into individual, project-isolated zip archives indexed by a lightweight Parquet manifest, so that I can retrieve only the documents for my project of interest without downloading a monolithic multi-gigabyte document repository.
+18. As a forensic auditor, I want every quarterly Form 3 filing preserved with explicit `snapshot_date` and `quarter` columns alongside the original raw JSON payload, so that longitudinal expenditure audits maintain 100% data fidelity without schema truncation.
 16. As a pipeline data engineer, I want every API response stored with an immutable SHA-256 hash and atomic manifest entry, so that any stakeholder can cryptographically verify data provenance against the official regulator.
 17. As a pipeline data engineer, I want the ingestion collector to support idempotent resumption, so that interrupted network runs resume seamlessly without re-fetching completed projects.
 18. As a pipeline data engineer, I want a rate-limited transport layer that respects portal stability, so that automated ingestion runs smoothly without triggering denial-of-service protections.
@@ -247,6 +250,7 @@ In accordance with `/karpathy-guidelines`, features are implemented strictly as 
 | **Forensic Knowledge Graph & Contagion** | Professional & promoter assignment tables | **IMPLEMENTED & VERIFIED** (Vis.js interactive network explorer) |
 | **Terminal Web Dashboard (Chart.js 4.4)** | Quantitative analytics APIs + Chart.js UMD | **IMPLEMENTED & VERIFIED** (Survival, SHAP waterfall, price trajectory) |
 | **AI Diligence Copilot (MCP-Connected)** | `RealEstateIntelligenceMCP` + citation contract | **IMPLEMENTED & VERIFIED** (Embedded slide-over drawer with prompt chips) |
+| **Columnar Parquet Data Lake & Manifest** | Date-stamped Parquet indexes + Form 3 filings | **IMPLEMENTED & VERIFIED** (11 Parquet indexes + 4 quarterly filings, ADR-0002) |
 | **External Market Listing Ingestion** | Scraped listings from 99acres/MagicBricks | **SEAM DESIGNED** (Awaiting external listing crawl/import) |
 
 - **Domain Terminology Compliance**: All code, documentation, and user interfaces must strictly adhere to `GLOSSARY.md`. Terms such as "scheme", "site", "property", "crawl", "batch", and "builder" must be avoided in favor of "project", "run", "project snapshot", "promoter", and "professional".
