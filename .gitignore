@@ -1,0 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Temporary files and scratch pads
+*.tmp
+*.log
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Jupyter Checkpoints
+.ipynb_checkpoints/
+
+# Temporary SQLite journals and locks
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Private data collection pipeline, raw scrapers, and raw filings (~10.5 GB)
+collected_data/
+legacy/
+raw_data/
+gujrera_pipeline/
+
+# Environment files and credentials
+.env
+.env.*
+*.key
+*.pem

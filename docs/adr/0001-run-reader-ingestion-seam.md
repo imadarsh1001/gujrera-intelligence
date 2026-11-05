@@ -1,0 +1,3 @@
+# 0001. Introduce RunReader at the Pipeline Ingestion Seam
+
+`real_estate_intelligence` previously bypassed the `gujrera_pipeline` interface by querying `manifest.sqlite` tables directly and decompressing 14 raw `.json.gz` files from internal filesystem paths. We introduce `RunReader` (with `ProjectSnapshot` and `DocumentRef` abstractions) inside `gujrera_pipeline` as the canonical read-side seam, backed by a production `DiskRunReader` and an in-memory `FakeRunReader` for testing. Downstream analytics now ingest unit-level transactions into a dedicated `unit_transactions` relational table, eliminating runtime disk I/O in `pricing.py` and completely decoupling the intelligence platform from raw filesystem storage.
