@@ -250,8 +250,10 @@ In accordance with `/karpathy-guidelines`, features are implemented strictly as 
 | **Forensic Knowledge Graph & Contagion** | Professional & promoter assignment tables | **IMPLEMENTED & VERIFIED** (Vis.js interactive network explorer) |
 | **Terminal Web Dashboard (Chart.js 4.4)** | Quantitative analytics APIs + Chart.js UMD | **IMPLEMENTED & VERIFIED** (Survival, SHAP waterfall, price trajectory) |
 | **AI Diligence Copilot (MCP-Connected)** | `RealEstateIntelligenceMCP` + citation contract | **IMPLEMENTED & VERIFIED** (Embedded slide-over drawer with prompt chips) |
-| **Columnar Parquet Data Lake & Manifest** | Date-stamped Parquet indexes + Form 3 filings | **IMPLEMENTED & VERIFIED** (11 Parquet indexes + 4 quarterly filings, ADR-0002) |
+| **Columnar Parquet Data Lake & Manifest** | Date-stamped Parquet indexes + Form 3 filings | **IMPLEMENTED & VERIFIED** (11 Parquet indexes + 16 Form 3 partitions + 1,204 document bundles, ADR-0002, docs/LEARNINGS.md) |
 | **External Market Listing Ingestion** | Scraped listings from 99acres/MagicBricks | **SEAM DESIGNED** (Awaiting external listing crawl/import) |
+
+- **Engineering Learnings & Architecture Notes**: Key operational insights on Git HTTP chunked transport, sub-25MB data partitioning, DuckDB zero-copy querying, and 10.79 GB verified disk reclamation are codified in [`docs/LEARNINGS.md`](file:///d:/Code%20Projects/Miscellaneous/Real%20Estate%20Data/gujRERA/docs/LEARNINGS.md).
 
 - **Domain Terminology Compliance**: All code, documentation, and user interfaces must strictly adhere to `GLOSSARY.md`. Terms such as "scheme", "site", "property", "crawl", "batch", and "builder" must be avoided in favor of "project", "run", "project snapshot", "promoter", and "professional".
 - **Temporal Lineage Preservation**: In accordance with the data contract, index form IDs, current QPR form IDs, filing submission dates, and run observation timestamps must remain distinct fields. They must never be merged into a single generic date column.

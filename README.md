@@ -219,3 +219,13 @@ Open [http://localhost:8765](http://localhost:8765) in your browser.
 * Explore the **Quantitative ML & Curves** tab for TreeSHAP decompositions and Cox survival delay forecasting.
 * Inspect the **Cross-Project Knowledge Graph** for contagion and shared professional links.
 * Launch the **Diligence Copilot**: click the floating bot launcher or press the gear icon (`⚙️`) to input an optional Gemini or OpenAI API key for deep multi-turn tool-calling, or use the 100% offline local evidentiary engine with zero hallucination.
+
+---
+
+## Documentation & Engineering Learnings
+
+- **Full Project Specification**: [`docs/SPEC.md`](file:///d:/Code%20Projects/Miscellaneous/Real%20Estate%20Data/gujRERA/docs/SPEC.md)
+- **Engineering Learnings & Post-Mortem**: [`docs/LEARNINGS.md`](file:///d:/Code%20Projects/Miscellaneous/Real%20Estate%20Data/gujRERA/docs/LEARNINGS.md) (Git HTTP/1.1 chunked protocol, sub-25MB data lake partitioning, DuckDB zero-copy querying, and 10.79 GB verified disk reclamation)
+- **ADR 0001**: [`docs/adr/0001-run-reader-decoupling.md`](file:///d:/Code%20Projects/Miscellaneous/Real%20Estate%20Data/gujRERA/docs/adr/0001-run-reader-decoupling.md) (RunReader Decoupling)
+- **ADR 0002**: [`docs/adr/0002-columnar-parquet-data-lake-and-document-manifest.md`](file:///d:/Code%20Projects/Miscellaneous/Real%20Estate%20Data/gujRERA/docs/adr/0002-columnar-parquet-data-lake-and-document-manifest.md) (Columnar Parquet Data Lake & Evidentiary Manifest)
+- **Private Pipeline Architecture**: [`gujrera_pipeline/README.md`](file:///d:/Code%20Projects/Miscellaneous/Real%20Estate%20Data/gujRERA/gujrera_pipeline/README.md)
