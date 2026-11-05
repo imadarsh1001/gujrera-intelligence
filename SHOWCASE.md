@@ -262,9 +262,10 @@ The platform provides a zero-dependency local web dashboard (`python -m real_est
 2. **Hedonic Pricing SHAP Waterfall**: Horizontal bar chart rendering exact additive marginal contributions ($\text{INR/sq.ft}$) for location coordinates, layout scale, physical completion, and promoter track record, complete with interactive asset class and carpet area controls.
 3. **Longitudinal Price Realization Trajectory**: Multi-year chronological line chart plotting quarterly median transaction prices, boundary envelopes (min/max), and badges for total price appreciation % and annualized CAGR.
 
-### B. Interactive Diligence Copilot (RERA Statutory Ground-Truth)
+### B. Dual-Mode Diligence Copilot (Agentic LLM + Deterministic RAG)
 An embedded floating copilot drawer provides conversational forensic analysis backed directly by the `RealEstateIntelligenceMCP` server:
-- **Instant Statutory Answers**: Deep analysis for queries like *"Audit Section 4(2)(l)(D) escrow retention and withdrawals"*, *"Check title clearance and bank mortgages"*, or *"Analyze survival handover delay risk"*.
+- **⚡ Agentic LLM Mode (Gemini 2.0 Flash / OpenAI)**: Open-ended multi-turn reasoning that dynamically executes tool calls against 10 local forensic MCP tools (`get_escrow_health`, `forecast_completion_delay`, `predict_pricing_benchmark`, `audit_discrepancies`, `calculate_escrow_runway`, `get_land_records`, etc.) to retrieve exact statutory numbers and synthesize buyer recommendations. Easily configured via the Copilot Settings (`⚙️`) drawer with secure local browser storage.
+- **🛡️ Local Evidentiary Mode (Deterministic Fallback)**: Operates 100% offline with zero external cloud credentials, powered by local SQLite FTS5 BM25 search, GBDT TreeSHAP, and Cox survival modeling.
 - **Quick Prompt Chips**: One-click shortcuts for high-frequency institutional diligence questions.
 - **Strict Citation Contract**: Answers cite exact statutory and relational sources: `[Source: Run default_run | Form 3 CA | Table banks]`, ensuring zero hallucination.
 
@@ -275,8 +276,9 @@ An embedded floating copilot drawer provides conversational forensic analysis ba
 The CLI provides full access to all analytical capabilities without requiring web or cloud dependencies:
 
 ```powershell
-# 1. Start interactive web terminal with Chart.js analytics & AI Copilot
-python -m real_estate_intelligence.cli serve --port 8000
+# 1. Start interactive web terminal with Chart.js analytics & AI Copilot (Port 8765)
+python run_server.py
+# Or: python -m real_estate_intelligence.cli serve --port 8765
 
 # 2. Run full statutory due-diligence dossier
 python -m real_estate_intelligence.cli dossier --project-id 13560
@@ -299,6 +301,37 @@ python -m real_estate_intelligence.cli audit --project-id 17830
 # 8. Execute automated AI/ML & Agent Evaluation Benchmark Harness
 python -m real_estate_intelligence.cli eval
 ```
+
+---
+
+## 10. Dual-Repository Topology & Institutional Privacy Governance
+
+The platform enforces strict physical decoupling between network collection and quantitative analysis:
+
+```mermaid
+flowchart LR
+    subgraph PrivateRepo["Private: gujrera-pipeline"]
+        Scrapers["Scrapers & Curl Transport"]
+        RawCache["Raw Cache & PDFs (.gitignore)"]
+        Manifests["SQLite Manifests & State"]
+    end
+
+    subgraph PublicRepo["Public: gujrera-intelligence"]
+        RunReaderSeam["RunReader Protocol Seam"]
+        FactBase["Curated SQLite Fact Base"]
+        AnalyticsCore["GBDT ML + Cox Survival + MCP"]
+        WebTerminal["Web UI & Copilot (Port 8765)"]
+    end
+
+    PrivateRepo -->|Clean Seam (ADR-0001)| RunReaderSeam
+    RunReaderSeam --> FactBase
+    FactBase --> AnalyticsCore
+    AnalyticsCore --> WebTerminal
+```
+
+- **Public Repository (`imadarsh1001/gujrera-intelligence`)**: Contains the intelligence platform, analytical engines, documentation, test suites, and UI. Never contains raw scraped filings, un-redacted personal data, or network scraping internals.
+- **Private Repository (`imadarsh1001/gujrera-pipeline`)**: Isolated subfolder managing statutory endpoint harvesting, rate-limiting, and raw response storage. Raw data directories are ignored in `.gitignore`.
+- **Multi-Repo Synchronization**: Managed seamlessly via `push_all.bat` (or `push_all.ps1`), which stages and pushes changes to both remotes in one step.
 
 ---
 

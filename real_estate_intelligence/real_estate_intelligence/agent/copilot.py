@@ -176,12 +176,34 @@ class AgenticCopilot:
         self.mcp = mcp_server
 
     def dispatch_tool(self, name: str, args: Dict[str, Any]) -> Any:
-        """Route tool invocation to local MCP server instance."""
+        """Route tool invocation to local MCP server instance with safe argument filtering and coercion."""
         func = getattr(self.mcp, name, None)
         if not func:
             return {"error": f"Tool '{name}' not found."}
         try:
-            return func(**args)
+            import inspect
+            sig = inspect.signature(func)
+            filtered_args = {}
+            for param_name in sig.parameters.keys():
+                if param_name in args:
+                    val = args[param_name]
+                    if param_name == "project_id" and val is not None:
+                        try:
+                            val = int(val)
+                        except (ValueError, TypeError):
+                            pass
+                    elif param_name in ("carpet_area_sqft", "radius_km") and val is not None:
+                        try:
+                            val = float(val)
+                        except (ValueError, TypeError):
+                            pass
+                    elif param_name == "limit" and val is not None:
+                        try:
+                            val = int(val)
+                        except (ValueError, TypeError):
+                            pass
+                    filtered_args[param_name] = val
+            return func(**filtered_args)
         except Exception as e:
             logger.warning(f"Error executing tool {name} with args {args}: {e}")
             return {"error": str(e)}

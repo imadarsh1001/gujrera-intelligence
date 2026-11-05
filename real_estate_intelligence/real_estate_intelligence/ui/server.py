@@ -1759,14 +1759,16 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             # 1b. Architecture & LLM Credential Inquiry
             if any(w in q_lower for w in ["which llm", "llm", "ai model", "what model", "credentials", "api key", "openai", "gemini", "claude", "architecture"]):
                 reply_lines.append("### Architecture & Credentials Disclosure")
-                reply_lines.append("This Intelligence Copilot operates on a **100% local, zero-cloud-credential evidentiary architecture**. No third-party LLM API keys (OpenAI, Gemini, Anthropic) are used or required.")
+                reply_lines.append("This Intelligence Copilot operates on a **Dual-Mode Sovereign Architecture**:")
+                reply_lines.append("1. **⚡ Agentic LLM Mode**: Deep open-ended reasoning using Gemini 2.0 Flash or OpenAI with automated tool calls across 10 MCP forensic tools (activated when an API key is provided via the ⚙️ Settings drawer).")
+                reply_lines.append("2. **🛡️ Local Evidentiary Mode**: Operates 100% offline with zero cloud credentials required, powered by local SQLite FTS5 BM25 search, GBDT TreeSHAP, and Cox survival modeling with guaranteed **0% hallucination**.")
                 reply_lines.append("\n**Internal Machine Learning & Forensic Stack:**")
                 reply_lines.append("- **Hedonic Pricing Engine**: Gradient Boosted Decision Trees (GBDT) with exact Lundberg-Lee Tree SHAP feature attributions.")
                 reply_lines.append("- **Delivery Forecasting**: Semi-parametric Cox Proportional Hazards survival analysis calibrated against physical velocity.")
                 reply_lines.append("- **Statutory Regulatory RAG**: SQLite FTS5 full-text search with BM25 relevance ranking indexing sworn Form 1, 2, and 3 PDF disclosures.")
                 reply_lines.append("- **Contagion & Network Graph**: Cross-project relational graph linking promoters, architects, engineers, and chartered accountants.")
-                reply_lines.append("- **Evidentiary Contract**: Fully deterministic, citation-backed factual synthesis guaranteeing **0% hallucination**.")
-                citations.extend(["Local System Architecture", "GujRERA Relational Fact Base", "Python Standard Library + SQLite FTS5"])
+                reply_lines.append("- **Evidentiary Citation Contract**: Fully deterministic, citation-backed factual synthesis guaranteeing **0% hallucination**.")
+                citations.extend(["Local System Architecture", "GujRERA Relational Fact Base", "Model Context Protocol (MCP)"])
                 return {"reply": "\n".join(reply_lines), "citations": citations}
 
             # 1c. Buyer Advisory & Best Time to Buy
@@ -2128,7 +2130,7 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
         }
 
     def _send_json(self, data):
-        raw = json.dumps(data).encode("utf-8")
+        raw = json.dumps(data, default=str, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(raw)))
@@ -2136,7 +2138,7 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
 
-def start_server(port: int = 8000, db_path=None):
+def start_server(port: int = 8765, db_path=None):
     IntelligenceRequestHandler.setup_backends(db_path)
     server = HTTPServer(("127.0.0.1", port), IntelligenceRequestHandler)
     print(f"\n[READY] Real Estate Intelligence Terminal running at: http://127.0.0.1:{port}", flush=True)

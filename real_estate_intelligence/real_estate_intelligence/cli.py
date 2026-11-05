@@ -397,7 +397,7 @@ def main():
 
     # Serve Dashboard
     p_serve = subparsers.add_parser("serve", help="Launch interactive web dashboard terminal")
-    p_serve.add_argument("--port", type=int, default=8000, help="Web server port (default 8000)")
+    p_serve.add_argument("--port", type=int, default=8765, help="Web server port (default 8765)")
     p_serve.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Database path")
     p_serve.set_defaults(func=cmd_serve)
 

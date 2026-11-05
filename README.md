@@ -7,6 +7,32 @@ An institutional-grade due-diligence and analytics platform for real estate in G
 [![Evaluation Benchmark: PASS](https://img.shields.io/badge/Eval%20Harness-100%25%20PASS-brightgreen.svg)](SHOWCASE.md#automated-evaluation-harness)
 [![Database: SQLite WAL](https://img.shields.io/badge/Database-SQLite%20WAL-orange.svg)](SHOWCASE.md#append-only-relational-fact-storage)
 [![Evidentiary Contract: Zero Hallucination](https://img.shields.io/badge/Agentic%20MCP-Evidentiary%20Contract-purple.svg)](SHOWCASE.md#agentic-ai--model-context-protocol-mcp)
+[![Dual-Repo: Public Intelligence + Private Pipeline](https://img.shields.io/badge/Repository-Dual--Repo%20Decoupled-success.svg)](#dual-repository-architecture--sync-workflow)
+
+---
+
+## Dual-Repository Architecture & Sync Workflow
+
+To guarantee institutional privacy while maintaining open-source transparency, the platform operates across two separate repositories connected by a typed architectural data seam:
+
+| Repository | Scope & Access | Key Responsibilities |
+|---|---|---|
+| **`gujrera-intelligence`** | **Public** | Quantitative ML (Hedonic GBDT + TreeSHAP), Cox survival delivery forecasting, 14-table relational SQLite fact base, Vis.js knowledge graph, interactive Chart.js analytics UI, Diligence Copilot, and 13-tool Model Context Protocol (MCP) server. |
+| **`gujrera-pipeline`** | **Private** | Resumable ingestion engine, authenticated curl transport, rate limiters, catalog schemas, and raw document/JSON harvesters. Raw scraped data and scraping blueprints remain strictly private. |
+
+### Architectural Boundary (`RunReader` Seam)
+The public intelligence tier never invokes raw scrapers directly. Instead, it reads through the self-contained `RunReader` protocol boundary (`real_estate_intelligence/db/reader.py` / ADR-0001). This guarantees that the public intelligence application runs 100% standalone without requiring the private pipeline or network access.
+
+### 1-Click Multi-Repo Synchronization (`push_all.bat`)
+To eliminate Git friction and keep both repositories synchronized with atomic commit messages:
+```cmd
+push_all.bat "feat: update copilot argument safety and docs"
+```
+Or via PowerShell:
+```powershell
+.\push_all.ps1 -msg "feat: update copilot argument safety and docs"
+```
+This automatically inspects, stages, commits, and pushes changes to both `origin` remotes (`imadarsh1001/gujrera-intelligence` and `imadarsh1001/gujrera-pipeline`).
 
 ---
 
@@ -104,7 +130,7 @@ uv pip install pypdf
 ### 2. Running Tests
 
 ```bash
-# Run complete platform unit test suite (25 tests)
+# Run complete platform unit test suite (32 tests)
 python -c "import sys, unittest; sys.path.insert(0, '.'); sys.path.insert(0, 'real_estate_intelligence'); unittest.main(module=None, argv=['unittest', 'discover', '-s', 'real_estate_intelligence/tests'])"
 
 # Run the 4-pillar AI/ML & Agent Evaluation Benchmark Harness
@@ -118,7 +144,7 @@ cd real_estate_intelligence
 
 # 1. Start interactive terminal web dashboard with Chart.js analytics & AI Copilot
 python run_server.py
-# (Or with custom port: python run_server.py serve --port 8765)
+# (Or via CLI: python -m real_estate_intelligence.cli serve --port 8765)
 
 # 2. Run full statutory due-diligence dossier
 python -m real_estate_intelligence.cli dossier --project-id 13560
@@ -145,11 +171,15 @@ python -m real_estate_intelligence.cli pricing --project-id 13705
 python -m real_estate_intelligence.cli search --query "encumbrance"
 ```
 
-### 4. Interactive Web Dashboard
+### 4. Interactive Web Dashboard & AI Diligence Copilot
 
 Start the server:
 ```bash
-python -m real_estate_intelligence.cli serve --port 8000
+python run_server.py
+# Or: python -m real_estate_intelligence.cli serve --port 8765
 ```
-Open [http://localhost:8000](http://localhost:8000) in your browser.
-Select projects from the header dropdown (e.g. `16562 — THE BALCONY`, `13705 — THE GATE BY DEV AASHISH`), explore the **Quantitative ML & Curves** tab, inspect the **Cross-Project Knowledge Graph**, and chat with the **Diligence Copilot**.
+Open [http://localhost:8765](http://localhost:8765) in your browser.
+* Select projects from the header dropdown (e.g. `16562 — THE BALCONY`, `13705 — THE GATE BY DEV AASHISH`).
+* Explore the **Quantitative ML & Curves** tab for TreeSHAP decompositions and Cox survival delay forecasting.
+* Inspect the **Cross-Project Knowledge Graph** for contagion and shared professional links.
+* Launch the **Diligence Copilot**: click the floating bot launcher or press the gear icon (`⚙️`) to input an optional Gemini or OpenAI API key for deep multi-turn tool-calling, or use the 100% offline local evidentiary engine with zero hallucination.

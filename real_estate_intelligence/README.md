@@ -78,7 +78,7 @@ Rather than acting as another broker lead-generation portal with unverified mark
   $$\text{CAGR} = \left[ \left( \frac{\text{Latest Median Rate}}{\text{First Median Rate}} \right)^{\frac{1}{\Delta \text{Years}}} - 1 \right] \times 100$$
 
 ### 5. Interactive Terminal Web Dashboard & AI Diligence Copilot
-Run locally via `python -m real_estate_intelligence.cli serve --port 8000`:
+Run locally via `python -m real_estate_intelligence.cli serve --port 8765` (or `python run_server.py` from root):
 * **Executive 4-Quadrant Tab**: Financial inflows, construction velocity, land identity, and legal compliance.
 * **Unit Pricing Tab**: 25th/median/75th percentiles, block-by-block variance, and recent registered transactions.
 * **Quantitative ML & Curves Tab (Chart.js 4.4 UMD)**:
@@ -86,7 +86,9 @@ Run locally via `python -m real_estate_intelligence.cli serve --port 8000`:
   - Hedonic Pricing SHAP Waterfall with interactive asset class and carpet area selectors.
   - Longitudinal Price Realization Trajectory with total appreciation % and CAGR badges.
 * **Knowledge Graph Tab (Vis.js)**: Interactive node-edge visualization of promoters, consultants, and banks.
-* **AI Diligence Copilot Drawer**: An embedded slide-over assistant connected to `RealEstateIntelligenceMCP`, answering queries with structured citations: `[Source: Run default_run | Form 3 CA | Table banks]`.
+* **Dual-Mode Diligence Copilot**:
+  - **⚡ Agentic LLM Mode**: Deep reasoning using Gemini 2.0 Flash or OpenAI with automated tool calls across 10 MCP forensic tools. Configurable via the Copilot Settings (`⚙️`) drawer.
+  - **🛡️ Local Evidentiary Mode**: 100% offline, zero-credential deterministic RAG using SQLite FTS5 BM25 search, GBDT TreeSHAP, and Cox survival modeling with guaranteed **0% hallucination**.
 
 ### 6. Model Context Protocol (MCP) Server
 Exposes 13 research tools via `real_estate_intelligence.mcp.server.RealEstateIntelligenceMCP`:
@@ -99,9 +101,9 @@ Exposes 13 research tools via `real_estate_intelligence.mcp.server.RealEstateInt
 ### 1. Start Web Terminal & Diligence Copilot
 
 ```bash
-python -m real_estate_intelligence.cli serve --port 8000
+python -m real_estate_intelligence.cli serve --port 8765
 ```
-Open `http://localhost:8000` in your browser.
+Open `http://localhost:8765` in your browser.
 
 ### 2. Run Forensic Diligence & Analytics via CLI
 
@@ -134,7 +136,7 @@ python -m real_estate_intelligence.cli search --query "encumbrance"
 ### 3. Run Automated Tests & Evaluation Benchmark Harness
 
 ```bash
-# Run all 25 unit tests
+# Run all 32 unit tests
 python -c "import sys, unittest; sys.path.insert(0, '.'); sys.path.insert(0, 'real_estate_intelligence'); unittest.main(module=None, argv=['unittest', 'discover', '-s', 'real_estate_intelligence/tests'])"
 
 # Run the 4-pillar AI/ML & Agent Evaluation Benchmark Harness
