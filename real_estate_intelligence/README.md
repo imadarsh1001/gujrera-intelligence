@@ -96,6 +96,34 @@ Exposes 13 research tools via `real_estate_intelligence.mcp.server.RealEstateInt
 
 ---
 
+## Installation & Package Management with `uv`
+
+The platform uses [uv](https://github.com/astral-sh/uv) for sovereign, lightning-fast virtual environment and dependency management:
+
+```bash
+# 1. Create a virtual environment
+uv venv
+
+# 2. Activate the virtual environment
+# Windows:
+.venv\Scripts\activate
+# Linux / macOS:
+source .venv/bin/activate
+
+# 3. Install in editable mode
+uv pip install -e .
+
+# (Optional) Install development dependencies (pytest):
+uv pip install -e ".[dev]"
+```
+
+Once installed in editable mode, the CLI is available both as a python module (`python -m real_estate_intelligence.cli`) and as an entrypoint executable:
+```bash
+uv run real-estate-intelligence --help
+```
+
+---
+
 ## Quickstart & CLI Commands
 
 ### 1. Start Web Terminal & Diligence Copilot

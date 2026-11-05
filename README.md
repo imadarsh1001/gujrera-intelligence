@@ -117,24 +117,60 @@ Run via `python -m real_estate_intelligence.cli eval`:
 
 ## Quickstart & Commands
 
-### 1. Installation
+### 1. Installation & Environment Setup (Managed with `uv`)
+
+This platform uses [uv](https://github.com/astral-sh/uv) as its sovereign, blazingly fast Python package and virtual environment manager.
 
 ```bash
 # Clone the repository and navigate to root
-cd "gujRERA"
+git clone https://github.com/imadarsh1001/gujrera-intelligence.git
+cd gujrera-intelligence
 
-# Install dependencies with uv (or standard pip)
-uv pip install pypdf
+# 1. Create a sovereign virtual environment
+uv venv
+
+# 2. Activate the virtual environment
+# Windows PowerShell / CMD:
+.venv\Scripts\activate
+# Linux / macOS:
+source .venv/bin/activate
+
+# 3. Install core dependencies in editable mode
+uv pip install -r requirements.txt
+
+# (Optional) For development & testing dependencies:
+uv pip install -r requirements-dev.txt
 ```
 
-### 2. Running Tests
+#### Package Maintenance Workflows with `uv`:
+* **Zero-Activation Direct Run**: Execute any CLI command or server directly through `uv` without manually activating the virtualenv:
+  ```bash
+  uv run python run_server.py
+  uv run python -m real_estate_intelligence.cli eval
+  ```
+* **Add a New Dependency**:
+  ```bash
+  uv add <package-name>
+  # Or via pip interface:
+  uv pip install <package-name>
+  ```
+* **Upgrade Dependencies**:
+  ```bash
+  uv pip install --upgrade -r requirements.txt
+  ```
+* **Inspect Dependency Tree**:
+  ```bash
+  uv pip tree
+  ```
+
+### 2. Running Tests & Benchmarks
 
 ```bash
 # Run complete platform unit test suite (32 tests)
-python -c "import sys, unittest; sys.path.insert(0, '.'); sys.path.insert(0, 'real_estate_intelligence'); unittest.main(module=None, argv=['unittest', 'discover', '-s', 'real_estate_intelligence/tests'])"
+uv run python -c "import sys, unittest; sys.path.insert(0, '.'); sys.path.insert(0, 'real_estate_intelligence'); unittest.main(module=None, argv=['unittest', 'discover', '-s', 'real_estate_intelligence/tests'])"
 
 # Run the 4-pillar AI/ML & Agent Evaluation Benchmark Harness
-python -m real_estate_intelligence.cli eval
+uv run python -m real_estate_intelligence.cli eval
 ```
 
 ### 3. CLI Operations

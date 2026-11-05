@@ -335,9 +335,10 @@ flowchart LR
 
 ---
 
-## 10. Technology Stack
+## 11. Technology Stack & Sovereign Package Architecture
 
 - **Core Runtime**: Python 3.12 (Zero external C-extension binary dependencies for sovereignty and cross-platform portability)
+- **Package & Environment Management**: [uv](https://github.com/astral-sh/uv) (Astral) for deterministic dependency resolution and fast virtual environment management (`requirements.txt`, `pyproject.toml`)
 - **Database**: SQLite 3 with Write-Ahead Logging (WAL), foreign key cascading, and FTS5 BM25 search
 - **Data Science & ML**: Custom high-performance GBDT with exact TreeSHAP path decomposition; semi-parametric Cox Proportional Hazards regression
 - **GIS / Spatial**: Great-Circle Haversine spherical trigonometric distance engine
@@ -347,7 +348,7 @@ flowchart LR
 
 ---
 
-## 11. Conclusion & Portfolio Impact
+## 12. Conclusion & Portfolio Impact
 
 This codebase demonstrates:
 1. **End-to-End System Design**: Clean two-tier decoupling between un-opinionated network scraping and an opinionated, typed intelligence consumer.

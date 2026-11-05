@@ -1,0 +1,4 @@
+# GujRERA Sovereign Real Estate Intelligence Platform
+# Core Dependencies (Managed with uv)
+-e ./real_estate_intelligence
+pypdf>=5.0.0

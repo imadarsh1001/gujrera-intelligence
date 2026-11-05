@@ -1,0 +1,4 @@
+# GujRERA Sovereign Real Estate Intelligence Platform
+# Development & Testing Dependencies (Managed with uv)
+-r requirements.txt
+pytest>=8.0.0
