@@ -38,7 +38,7 @@ if errorlevel 1 (
 )
 for /f "tokens=1,2" %%a in ('git rev-list --left-right --count HEAD...origin/main') do set "AHEAD=%%a" & set "BEHIND=%%b"
 if not "%BEHIND%"=="0" (
-    echo   ABORTED: origin/main is %BEHIND% commit(s) ahead of local '%BRANCH%'. Reconcile first:
+    echo   ABORTED: origin/main is %BEHIND% commits ahead of local '%BRANCH%'. Reconcile first:
     echo     git pull --rebase origin main
     set "FAILED=1"
     goto sync_private
@@ -78,7 +78,7 @@ if errorlevel 1 (
 )
 for /f "tokens=1,2" %%a in ('git rev-list --left-right --count HEAD...origin/main') do set "AHEAD=%%a" & set "BEHIND=%%b"
 if not "%BEHIND%"=="0" (
-    echo   ABORTED: origin/main is %BEHIND% commit(s) ahead of local '%BRANCH%'. Reconcile first:
+    echo   ABORTED: origin/main is %BEHIND% commits ahead of local '%BRANCH%'. Reconcile first:
     echo     git pull --rebase origin main
     set "FAILED=1"
     goto done
