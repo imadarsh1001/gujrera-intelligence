@@ -73,6 +73,12 @@ gujRERA/
 
 ---
 
+## Code Contracts & Review Audit Trail
+
+Every code directory carries an `EGM.md` contract — a per-directory statement of its public interface, invariants, and side effects, generated from source and verified in a six-round audit (96 findings raised, 94 fixes applied, 2026-11-09). Start at the root [`EGM.md`](EGM.md) (workspace blueprint) or [`real_estate_intelligence/EGM.md`](real_estate_intelligence/EGM.md) (public-repo subtree root). The audit trail for the review lives in [`docs/reviews/`](docs/reviews/). Contracts for the private `gujrera_pipeline` repository live in that repository; the gitignored `legacy/` archive's contracts are local-only.
+
+---
+
 ## Core Capabilities
 
 ### 1. Forensic Capital & Escrow Auditing
