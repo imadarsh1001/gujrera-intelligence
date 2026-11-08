@@ -49,7 +49,7 @@ if errorlevel 1 (
     set "FAILED=1"
     goto sync_private
 )
-echo   -> Public repository pushed.
+echo   -- Public repository pushed.
 
 :sync_private
 echo.
@@ -89,7 +89,7 @@ if errorlevel 1 (
     set "FAILED=1"
     goto done
 )
-echo   -> Private repository pushed.
+echo   -- Private repository pushed.
 
 :done
 popd
