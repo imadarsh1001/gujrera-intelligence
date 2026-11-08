@@ -23,7 +23,7 @@ Root-level files:
 
 - `run_server.py` - launcher: inserts the sibling `real_estate_intelligence` package root into `sys.path`, then calls `cli.main()`; with no arguments it rewrites `sys.argv` to `serve --port 8765` [run_server.py:main]
 - `push_all.bat` / `push_all.ps1` - dual-repo sync helpers: `git add .` + conditional commit + `git push origin main` in the outer repo, then the same inside `gujrera_pipeline/` [push_all.bat:sync sections], [push_all.ps1:Push-Location block]
-  - Invariant: both scripts push the local `main` ref (`git push origin main`); commits made on another branch are **not** published by them — commit on `main`, or push with an explicit refspec such as `git push origin test1:main`
+  - Invariant: both scripts are branch-safe: they `git fetch origin` first, abort when the checked-out branch is not `main` (unless `-AllowNonMain` / `--allow-non-main` is passed), push `git push origin HEAD:main`, abort on a non-fast-forward (`origin/main` ahead of local), and print success only after `ls-remote` confirms the remote ref matches local HEAD; the two pushes are independent and never auto-retried
 - Invariant: no Python source lives at the workspace root other than `run_server.py`; all code lives in the two repo trees documented below
 - Side effect: `run_server.py` starts the local dashboard server (TCP bind on `127.0.0.1:{port}`, default 8765)
 
