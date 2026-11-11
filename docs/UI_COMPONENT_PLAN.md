@@ -31,7 +31,21 @@ All fixes are in the current stack, no new dependencies. `real_estate_intelligen
 
 **Deferred to design review (not a fix):** CDN dependence of the "sovereign local-first" claim (Tailwind/Font Awesome/vis-network/Chart.js load from public CDNs; offline the UI is unstyled and chartless). Vendoring assets is a design decision, listed in the component mapping.
 
-**Review-driven fix additions (identified 2026-11-11, queued before feature work):** eager model training in `setup_backends` (or init lock) — the MCP hedonic/survival models lazily train unguarded and would double-train under concurrent requests; copilot escape-then-markdown (`formatBotReply` currently interpolates unescaped markdown + FTS snippets + citations); graph self-link exclusion in `graph/network.py` (each project is duplicated as its own prior-project node) and `linked_gujrera_projects_count` self-link correction; guarded query-param parsing on `/api/search` + analytics routes (connection-drop instead of 400); `allow_nan=False` JSON serialization. The ThreadingHTTPServer safety rationale in `ui/EGM.md` also needs rewording (safety comes from the single serialized connection, not WAL; `KnowledgeGraph.__init__` performs a DDL write).
+**Review-driven fix additions (identified 2026-11-11, committed `45a800d`):** eager model training in `setup_backends` (or init lock) — the MCP hedonic/survival models lazily train unguarded and would double-train under concurrent requests; copilot escape-then-markdown (`formatBotReply` currently interpolates unescaped markdown + FTS snippets + citations); graph self-link exclusion in `graph/network.py` (each project is duplicated as its own prior-project node) and `linked_gujrera_projects_count` self-link correction; guarded query-param parsing on `/api/search` + analytics routes (connection-drop instead of 400); `allow_nan=False` JSON serialization. The ThreadingHTTPServer safety rationale in `ui/EGM.md` also needs rewording (safety comes from the single serialized connection, not WAL; `KnowledgeGraph.__init__` performs a DDL write). — *All landed in `45a800d`.*
+
+### 1b. Release-1 features shipped (2026-11-12, branch `ui-revamp`)
+
+| Commit | What | Verification |
+|---|---|---|
+| `7de2f4c` | Explore Projects landing table + `/api/explore` aggregate endpoint; template extracted to `ui/static/` with vendored pinned assets (offline rendering); localStorage shortlist + Compare-lite; Detail match-strip + explicit copilot binding | Browser-verified workflows (filters, sort, hash-state restore, shortlist→compare→detail); tests 41/41 |
+| `29e0908` | Scenario-2 static demo mock + application-code provenance findings (BCR/PCWF = bare portal labels; raw `approvalDate`/`finalStatus` unmapped) | committed artifact |
+| `3079ebb` | Context-correct Explore/Compare (project banner + header selector hidden outside project-scoped tabs); touch targets ≥24px (WCAG 2.2 AA) | Live transition assertions; screenshot |
+| `9a0f3bd` | Real district boundaries (udit-001/india-maps-data GeoJSON, simplified) + district click-to-zoom; pins geographically true | SVG `isPointInFill` hit-testing: every pin resolves to its recorded district |
+| `72794be` | MapLibre GL 5.24.0 vendored (6.x is ESM-only) + MapTiler streets basemap behind an API key, offline SVG fallback kept | Rendered WebGL probe: 9 pins + district polygons |
+| `403f517` | Zoomability: visibility-aware load timer (rAF pauses in hidden panes), `e.error.status` fix, Navigation/Scale controls, pin hover popups | Live: load + 9 pins + district zoom 5.08→8.21 |
+| `a458b1f` | `.env` key storage (`MAPTILER_API_KEY`) + `/api/maptiler/` server-side proxy — key never reaches the browser (style/TileJSON rewritten, `?key=` stripped, leak-scanned); map UX pass (2/5 width, 380/560px tall, hint removed, district chip, dropdown counts) | HTTP-level leak scan zero; proxy 200s; 42/42 tests |
+| `4cc3dc2` | Revision display slimmed per author feedback (dot in Explore, legend removed, full status + review caveat in Project Detail Q4); `/api/project/{pid}` revision fields; `Cache-Control: no-cache` on the template (stale-cache breakage); table loading decoupled from map init; `xl:col-span-2` width fix; proxy keep-alive + in-memory cache (style cold 3.6s → warm 0.004s) | Live + tests 42/42 |
+| *(this commit)* | Loader maps `approvalDate`/`finalStatus` into `applications` (forward-migrated columns + backfill from the run archive); Project Detail shows "extension applied X · actioned Y — approval status not disclosed by the portal" | Backfill: 82/82 rows; both extension rows carry actioned dates; tests 42/42 |
 
 ## 2. Proposed Workflows, 3. Acceptance Scenarios, 4. Data Coverage & Definitions
 
@@ -66,7 +80,11 @@ Sources: official docs only — shadcn-vue.com (Data Table, Chart, Sheet), TanSt
 
 ## 8. Handoff
 
-- **Fixes completed:** §1 (13 items, each with verification evidence; tests 18/18).
-- **Fixes queued from review (pre-feature):** eager model training, copilot escape-then-markdown + sanitized errors, graph self-link exclusion, guarded param parsing, `allow_nan=False`, `ui/EGM.md` rationale rewording.
-- **Features proposed (reviewed):** release-1 scope per the brief's Goals vs. Non-Goals; `/api/explore` contract in the brief's Blocker-1 resolution.
-- **Decisions pending:** (a) commit the verified fix pass to `ui-revamp` (awaiting go-ahead); (b) fixture approach for scenario 2 — static mock (recommended) vs demo SQLite DB; (c) template extraction + asset vendoring approval; (d) copilot-on-Explore behavior (hidden vs explicitly bound); (e) BCR/LEGAL_PCWF/TP_PCWF definitions from the pipeline catalog; (f) frontend re-evaluation triggers (statewide ingestion / Ask stage); (g) statewide download-gap audit as a separate follow-on task.
+- **Fixes completed:** §1 (13 items) + review-driven hardening (`45a800d`) — every fix verified; tests 42/42.
+- **Release-1 features shipped:** §1b table (Explore + map + proxy + revision display), concept per `docs/reviews/ui-discovery/concepts_brief.md` Goals vs. Non-Goals.
+- **Decisions pending / follow-ons:**
+  - **Statewide download-gap audit** (author-requested separate task) before any 17,634-project ingestion.
+  - **Frontend re-evaluation triggers** (standing): statewide ingestion or the Ask-Across-Projects stage.
+  - **MapTiler key hygiene**: the temp key used for testing was pasted in chat — rotate it / set domain restrictions in the MapTiler dashboard; the deployment key belongs in `.env` (gitignored) and can stay server-side via the proxy.
+  - **Revision-semantics review** (brief Key Decision 9): how the three states treat early completion or future declared-date changes, once longer filing history exists.
+  - **Scenario-2 live rerun** when Ahmedabad-city/locality data lands (static mock exists for the walkthrough).

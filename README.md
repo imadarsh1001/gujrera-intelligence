@@ -221,7 +221,9 @@ python run_server.py
 # Or: python -m real_estate_intelligence.cli serve --port 8765
 ```
 Open [http://localhost:8765](http://localhost:8765) in your browser.
-* Select projects from the header dropdown (e.g. `16562 — THE BALCONY`, `13705 — THE GATE BY DEV AASHISH`).
+* **Explore Projects** (landing tab): searchable, filterable, sortable project table over the registered projects — district boundaries on an interactive map (click a district to zoom and filter), filing-freshness and completion-revision statuses with evidence links, and a shortlist with a side-by-side **Compare** view (saved in your browser).
+* Optional interactive basemap: set `MAPTILER_API_KEY` in the workspace `.env` (gitignored). The key stays server-side — the dashboard proxies map tiles through this server — and without it an offline sketch map is used.
+* Select projects from the header dropdown (e.g. `16562 — THE BALCONY`, `13705 — THE GATE BY DEV AASHISH`) for the full per-project dossier.
 * Explore the **Quantitative ML & Curves** tab for TreeSHAP decompositions and Cox survival delay forecasting.
 * Inspect the **Cross-Project Knowledge Graph** for contagion and shared professional links.
 * Launch the **Diligence Copilot**: click the floating bot launcher or press the gear icon (`⚙️`) to input an optional Gemini or OpenAI API key for deep multi-turn tool-calling, or use the 100% offline local evidentiary engine with zero hallucination.
