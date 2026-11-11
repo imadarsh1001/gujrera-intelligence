@@ -289,6 +289,21 @@ class TestUIServerEndpoints(unittest.TestCase):
         self.assertIn("reply", data)
         self.assertIn("Pricing Realization", data["reply"])
 
+    def test_verify_claim_invalid_numeric_returns_400(self):
+        # Non-numeric claim values must return HTTP 400, not crash the connection
+        code, _ = self._make_get_request(
+            "/api/verify_claim?project_id=16562&claimed_rate=abc&claimed_sold=&claimed_date="
+        )
+        self.assertEqual(code, 400)
+
+    def test_project_payload_excludes_self_sister_scheme(self):
+        # previous_projects self-links must not surface the project as its own sister scheme
+        code, body = self._make_get_request("/api/project/16562")
+        self.assertEqual(code, 200)
+        data = json.loads(body.decode("utf-8"))
+        prior_ids = [p["linked_project_id"] for p in data.get("prior_projects", [])]
+        self.assertNotIn(16562, prior_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -21,7 +21,7 @@ HTTP routes on `IntelligenceRequestHandler` [server.py:IntelligenceRequestHandle
 | POST | `/api/copilot` | JSON body `{query, project_id, api_key}`; 400 on invalid JSON [server.py:do_POST] |
 
 - `IntelligenceRequestHandler.setup_backends(db_path=None)` — classmethod wiring one shared connection plus `PricingIntelligence`, `SalesClaimVerifier`, `ProjectAuditor`, `DocumentSearchEngine`, `KnowledgeGraph`, `RealEstateIntelligenceMCP`, and `AgenticCopilot` [server.py:setup_backends]
-- `start_server(port=8765, db_path=None)` — constructs `HTTPServer(("127.0.0.1", port), ...)` and serves until KeyboardInterrupt [server.py:start_server]
+- `start_server(port=8765, db_path=None)` — constructs `ThreadingHTTPServer(("127.0.0.1", port), ...)`, sets `daemon_threads = True`, and serves until KeyboardInterrupt [server.py:start_server]
 - Package export: `start_server` [__init__.py:__all__]
 
 ## Invariants
@@ -30,7 +30,7 @@ HTTP routes on `IntelligenceRequestHandler` [server.py:IntelligenceRequestHandle
 - Copilot API key fallback chain: request body `api_key`, then env `GEMINI_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY` [server.py:do_POST]
 - `_handle_copilot_query` tries `AgenticCopilot.run_query` first when a key and backend exist and silently falls back to the deterministic keyword router on failure; with no key it is fully offline and deterministic [server.py:_handle_copilot_query]
 - The deterministic router matches intents in fixed order (greeting/help, architecture/credentials, buy-advice, lifecycle, launch date, sales/inventory, title/mortgage, escrow, delay/survival, pricing/CAGR, contagion/network) with a full-text-search fallback; a `project_id <= 0` is replaced by the lowest project ID in the database [server.py:_handle_copilot_query]
-- The server binds to `127.0.0.1` (not `0.0.0.0`) and is single-threaded (`HTTPServer`, not `ThreadingHTTPServer`) [server.py:start_server]
+- The server binds to `127.0.0.1` (not `0.0.0.0`) and is multi-threaded (`ThreadingHTTPServer` with `daemon_threads = True`) so a slow request such as an agentic LLM copilot call cannot block other dashboard requests; the shared SQLite connection is created with `check_same_thread=False` and a 30 s `busy_timeout`, and UI traffic is read-only, so concurrent requests are safe under WAL [server.py:start_server]
 - The entire dashboard HTML is embedded in the Python source as `HTML_TEMPLATE`; no static files are read from disk [server.py:HTML_TEMPLATE]
 
 ## Side Effects

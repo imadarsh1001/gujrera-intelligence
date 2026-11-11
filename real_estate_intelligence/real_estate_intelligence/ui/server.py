@@ -3,7 +3,7 @@
 import json
 import os
 import sqlite3
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
@@ -34,6 +34,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
         .tab-btn.active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
+        .tab-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; border-radius: 0.25rem; }
+        #tabStrip { scrollbar-width: thin; }
+        #tabStrip::-webkit-scrollbar { height: 6px; }
+        #tabStrip::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .kpi-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
         .badge-high { background-color: #fee2e2; color: #991b1b; border: 1px solid #f87171; }
         .badge-med { background-color: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
         .badge-info { background-color: #e0f2fe; color: #075985; border: 1px solid #38bdf8; }
@@ -43,20 +48,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <body class="bg-slate-50 text-slate-900 min-h-screen">
     <!-- Navbar -->
     <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-            <div class="flex items-center space-x-3">
-                <div class="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-0 sm:h-16 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div class="flex items-center space-x-3 min-w-0">
+                <div class="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow shrink-0">
                     <i class="fa-solid fa-building-shield"></i>
                 </div>
-                <div>
-                    <h1 class="font-bold text-lg leading-tight text-slate-900">Real Estate Intelligence Terminal</h1>
-                    <p class="text-xs text-slate-500">GujRERA Evidence-Backed Diligence & Pricing Radar</p>
+                <div class="min-w-0">
+                    <h1 class="font-bold text-base sm:text-lg leading-tight text-slate-900 truncate">Real Estate Intelligence Terminal</h1>
+                    <p class="text-[11px] sm:text-xs text-slate-500 truncate">GujRERA Evidence-Backed Diligence & Pricing Radar</p>
                 </div>
             </div>
             <!-- Project Selector -->
-            <div class="flex items-center space-x-3">
-                <label for="projectSelect" class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Select Project:</label>
-                <select id="projectSelect" onchange="loadProject(this.value)" class="bg-slate-100 border border-slate-300 text-slate-800 text-sm rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium">
+            <div class="flex items-center gap-2 sm:gap-3 sm:shrink-0 min-w-0">
+                <label for="projectSelect" class="text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:inline shrink-0">Select Project:</label>
+                <select id="projectSelect" onchange="loadProject(this.value)" aria-label="Select project" class="w-full sm:w-auto sm:max-w-xs min-w-0 bg-slate-100 border border-slate-300 text-slate-800 text-sm rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium truncate">
                     <!-- Populated dynamically -->
                 </select>
             </div>
@@ -65,15 +70,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     <!-- Main Container -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Global Error Banner -->
+        <div id="globalErrorBar" class="hidden mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-3" role="alert">
+            <span><i class="fa-solid fa-triangle-exclamation mr-1.5"></i><span id="globalErrorMsg">Something went wrong.</span></span>
+            <button onclick="hideGlobalError()" aria-label="Dismiss error" class="text-rose-600 hover:text-rose-800 font-bold px-2 shrink-0">&times;</button>
+        </div>
+
         <!-- Project Banner -->
         <div id="projectBanner" class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
                     <div class="flex items-center gap-3">
                         <h2 id="projName" class="text-2xl font-bold text-slate-900">Loading...</h2>
-                        <span id="projStatusBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Verified</span>
+                        <span id="projStatusBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800" title="Project is registered with Gujarat RERA">Registered</span>
                     </div>
-                    <p id="projReg" class="text-sm font-mono text-slate-500 mt-1">--</p>
+                    <p id="projReg" class="text-sm font-mono text-slate-500 mt-1 break-all">--</p>
                     <div class="flex items-center gap-3 mt-1.5 flex-wrap">
                         <p id="projLocation" class="text-xs text-slate-600"><i class="fa-solid fa-location-dot text-slate-400 mr-1"></i> --</p>
                         <a id="projMapLink" href="#" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded text-xs font-semibold border border-blue-200 transition">
@@ -84,42 +95,42 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-100 text-center">
                     <div>
                         <span class="text-[11px] text-slate-500 font-medium">Absorption</span>
-                        <p id="kpiBooking" class="text-base font-bold text-blue-600">--%</p>
+                        <p id="kpiBooking" class="text-base font-bold text-blue-600 kpi-value">--%</p>
                     </div>
                     <div>
                         <span class="text-[11px] text-slate-500 font-medium">Physical Progress</span>
-                        <p id="kpiProgress" class="text-base font-bold text-emerald-600">--%</p>
+                        <p id="kpiProgress" class="text-base font-bold text-emerald-600 kpi-value">--%</p>
                     </div>
                     <div>
                         <span class="text-[11px] text-slate-500 font-medium">Velocity Ratio</span>
-                        <p id="kpiVelocity" class="text-base font-bold text-indigo-600">--</p>
+                        <p id="kpiVelocity" class="text-base font-bold text-indigo-600 kpi-value">--</p>
                     </div>
                     <div>
                         <span class="text-[11px] text-slate-500 font-medium">Escrow Liquidity</span>
-                        <p id="kpiEscrowBal" class="text-base font-bold text-slate-800">--</p>
+                        <p id="kpiEscrowBal" class="text-base font-bold text-slate-800 kpi-value">--</p>
                     </div>
                     <div>
                         <span class="text-[11px] text-slate-500 font-medium">RERA Deadline</span>
-                        <p id="kpiDeadline" class="text-base font-bold text-slate-800">--</p>
+                        <p id="kpiDeadline" class="text-base font-bold text-slate-800 kpi-value">--</p>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Navigation Tabs -->
-        <div class="border-b border-slate-200 mb-6 flex space-x-6 text-sm overflow-x-auto">
-            <button onclick="switchTab('dossier')" id="tab-dossier" class="tab-btn active pb-3 px-1 whitespace-nowrap"><i class="fa-solid fa-chart-pie mr-2"></i>Executive 4-Quadrant</button>
-            <button onclick="switchTab('pricing')" id="tab-pricing" class="tab-btn pb-3 px-1 whitespace-nowrap"><i class="fa-solid fa-tag mr-2"></i>Unit Pricing</button>
-            <button onclick="switchTab('analytics')" id="tab-analytics" class="tab-btn pb-3 px-1 whitespace-nowrap"><i class="fa-solid fa-brain mr-2"></i>Quantitative ML & Curves</button>
-            <button onclick="switchTab('claims')" id="tab-claims" class="tab-btn pb-3 px-1 whitespace-nowrap"><i class="fa-solid fa-scale-balanced mr-2"></i>Claim Fact-Checker</button>
-            <button onclick="switchTab('discrepancies')" id="tab-discrepancies" class="tab-btn pb-3 px-1 whitespace-nowrap"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Audit Discrepancies</button>
-            <button onclick="switchTab('graph')" id="tab-graph" class="tab-btn pb-3 px-1 whitespace-nowrap"><i class="fa-solid fa-network-wired mr-2"></i>Knowledge Graph</button>
-            <button onclick="switchTab('vault')" id="tab-vault" class="tab-btn pb-3 px-1 whitespace-nowrap"><i class="fa-solid fa-folder-open mr-2"></i>Document Vault</button>
-            <button onclick="switchTab('search')" id="tab-search" class="tab-btn pb-3 px-1 whitespace-nowrap"><i class="fa-solid fa-file-magnifying-glass mr-2"></i>Document Search</button>
+        <div id="tabStrip" role="tablist" aria-label="Dashboard sections" class="border-b border-slate-200 mb-6 flex gap-1 sm:gap-6 text-sm overflow-x-auto">
+            <button onclick="switchTab('dossier')" id="tab-dossier" role="tab" aria-selected="true" aria-controls="content-dossier" class="tab-btn active pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-chart-pie mr-2"></i>Executive 4-Quadrant</button>
+            <button onclick="switchTab('pricing')" id="tab-pricing" role="tab" aria-selected="false" aria-controls="content-pricing" tabindex="-1" class="tab-btn pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-tag mr-2"></i>Unit Pricing</button>
+            <button onclick="switchTab('analytics')" id="tab-analytics" role="tab" aria-selected="false" aria-controls="content-analytics" tabindex="-1" class="tab-btn pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-brain mr-2"></i>Quantitative ML & Curves</button>
+            <button onclick="switchTab('claims')" id="tab-claims" role="tab" aria-selected="false" aria-controls="content-claims" tabindex="-1" class="tab-btn pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-scale-balanced mr-2"></i>Claim Fact-Checker</button>
+            <button onclick="switchTab('discrepancies')" id="tab-discrepancies" role="tab" aria-selected="false" aria-controls="content-discrepancies" tabindex="-1" class="tab-btn pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Audit Discrepancies</button>
+            <button onclick="switchTab('graph')" id="tab-graph" role="tab" aria-selected="false" aria-controls="content-graph" tabindex="-1" class="tab-btn pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-network-wired mr-2"></i>Knowledge Graph</button>
+            <button onclick="switchTab('vault')" id="tab-vault" role="tab" aria-selected="false" aria-controls="content-vault" tabindex="-1" class="tab-btn pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-folder-open mr-2"></i>Document Vault</button>
+            <button onclick="switchTab('search')" id="tab-search" role="tab" aria-selected="false" aria-controls="content-search" tabindex="-1" class="tab-btn pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-file-magnifying-glass mr-2"></i>Document Search</button>
         </div>
 
         <!-- Tab 1: Executive 4-Quadrant -->
-        <div id="content-dossier" class="tab-content space-y-6">
+        <div id="content-dossier" role="tabpanel" aria-labelledby="tab-dossier" class="tab-content space-y-6">
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <!-- Q1: Capital Inflow & Escrow Health -->
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
@@ -276,7 +287,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <!-- Tab 2: Pricing Intelligence -->
-        <div id="content-pricing" class="tab-content hidden space-y-6">
+        <div id="content-pricing" role="tabpanel" aria-labelledby="tab-pricing" class="tab-content hidden space-y-6">
             <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div class="flex items-center justify-between mb-4">
                     <div>
@@ -347,7 +358,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <!-- Tab: Quantitative ML & Predictive Analytics -->
-        <div id="content-analytics" class="tab-content hidden space-y-6">
+        <div id="content-analytics" role="tabpanel" aria-labelledby="tab-analytics" class="tab-content hidden space-y-6">
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <!-- Card 1: Survival Analysis Delay Curve -->
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
@@ -499,7 +510,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <!-- Tab 3: Broker Claim Verifier -->
-        <div id="content-claims" class="tab-content hidden space-y-6">
+        <div id="content-claims" role="tabpanel" aria-labelledby="tab-claims" class="tab-content hidden space-y-6">
             <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <h3 class="text-lg font-bold text-slate-900 mb-1">Broker & Sales Gallery Fact-Checker</h3>
                 <p class="text-xs text-slate-500 mb-6">Enter what the broker or builder sales agent told you to benchmark against statutory disclosures.</p>
@@ -528,7 +539,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <!-- Tab 4: Discrepancies -->
-        <div id="content-discrepancies" class="tab-content hidden space-y-4">
+        <div id="content-discrepancies" role="tabpanel" aria-labelledby="tab-discrepancies" class="tab-content hidden space-y-4">
             <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <h3 class="text-lg font-bold text-slate-900 mb-1">Statutory Discrepancy & Commitment Audit</h3>
                 <p class="text-xs text-slate-500 mb-4">Automated anomaly detector checking expenditure drops, velocity lag, deadline slippages, escrow depletion, and complaints.</p>
@@ -537,7 +548,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <!-- Tab 5: Interactive Knowledge Graph -->
-        <div id="content-graph" class="tab-content hidden space-y-6">
+        <div id="content-graph" role="tabpanel" aria-labelledby="tab-graph" class="tab-content hidden space-y-6">
             <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                     <div>
@@ -574,7 +585,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <!-- Tab 6: Document Due Diligence Vault -->
-        <div id="content-vault" class="tab-content hidden space-y-6">
+        <div id="content-vault" role="tabpanel" aria-labelledby="tab-vault" class="tab-content hidden space-y-6">
             <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div class="flex items-center justify-between mb-4">
                     <div>
@@ -591,13 +602,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <!-- Tab 7: Document Search (RAG) -->
-        <div id="content-search" class="tab-content hidden space-y-6">
+        <div id="content-search" role="tabpanel" aria-labelledby="tab-search" class="tab-content hidden space-y-6">
             <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <h3 class="text-lg font-bold text-slate-900 mb-1">Regulatory Document Full-Text Search (FTS5)</h3>
                 <p class="text-xs text-slate-500 mb-4">Direct sub-millisecond search across 2,006 parsed pages of signed Form 1/2/3 certificates, encumbrance letters, and title deeds.</p>
 
                 <div class="flex gap-2 mb-6">
-                    <input id="searchInput" type="text" placeholder="Search keywords (e.g. 'encumbrance', 'title clearance', 'mortgage', 'survey number')..." class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <input id="searchInput" type="text" placeholder="Search keywords (e.g. 'encumbrance', 'title clearance', 'mortgage', 'survey number')..." onkeydown="if(event.key==='Enter') executeSearch()" class="flex-1 min-w-0 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
                     <button onclick="executeSearch()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-5 py-2 rounded-lg shadow-sm">
                         <i class="fa-solid fa-magnifying-glass mr-1"></i> Search
                     </button>
@@ -616,7 +627,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </button>
 
     <!-- Floating Copilot Drawer Panel -->
-    <div id="copilotDrawer" class="fixed bottom-20 right-6 w-96 max-w-[calc(100vw-2rem)] h-[540px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col z-50 hidden overflow-hidden font-sans">
+    <div id="copilotDrawer" role="dialog" aria-label="Diligence Copilot" class="fixed bottom-20 right-6 w-96 max-w-[calc(100vw-2rem)] h-[540px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col z-50 hidden overflow-hidden font-sans">
         <!-- Header -->
         <div class="bg-slate-900 text-white p-3 flex items-center justify-between border-b border-slate-800">
             <div class="flex items-center space-x-2.5">
@@ -631,10 +642,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 </div>
             </div>
             <div class="flex items-center space-x-1">
-                <button onclick="toggleCopilotSettings()" title="Copilot LLM Settings" class="text-slate-400 hover:text-white text-xs p-1.5 rounded hover:bg-slate-800 transition">
+                <button onclick="toggleCopilotSettings()" title="Copilot LLM Settings" aria-label="Copilot settings" class="text-slate-400 hover:text-white text-xs p-1.5 rounded hover:bg-slate-800 transition">
                     <i class="fa-solid fa-gear"></i>
                 </button>
-                <button onclick="toggleCopilot()" class="text-slate-400 hover:text-white text-sm p-1">
+                <button onclick="toggleCopilot()" aria-label="Close copilot" class="text-slate-400 hover:text-white text-sm p-1">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
@@ -698,43 +709,110 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
 
     <script>
-        let currentPid = 16562;
+        let currentPid = null;
         let networkInstance = null;
         let survivalChartInstance = null;
         let shapChartInstance = null;
         let trendChartInstance = null;
 
         function formatINR(val) {
-            if (!val || isNaN(val)) return '--';
+            if (val === null || val === undefined || isNaN(Number(val))) return '--';
             return '₹' + (val / 10000000).toFixed(2) + ' Cr';
+        }
+
+        // Escape untrusted database / filing text before it enters innerHTML.
+        function esc(s) {
+            if (s === null || s === undefined) return '';
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // Escape untrusted snippet text while preserving the FTS engine's intentional <b> highlight tags.
+        function escSnippet(s) {
+            return esc(s).replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\\/b&gt;/g, '</b>');
+        }
+
+        async function fetchJSON(url, opts) {
+            const res = await fetch(url, opts);
+            if (!res.ok) {
+                const err = new Error('Request failed (HTTP ' + res.status + ')');
+                err.status = res.status;
+                throw err;
+            }
+            return res.json();
+        }
+
+        function showGlobalError(message) {
+            const bar = document.getElementById('globalErrorBar');
+            document.getElementById('globalErrorMsg').textContent = message;
+            bar.classList.remove('hidden');
+        }
+
+        function hideGlobalError() {
+            document.getElementById('globalErrorBar').classList.add('hidden');
         }
 
         async function init() {
             updateKeyStatusBadge();
-            const res = await fetch('/api/projects');
-            const projects = await res.json();
             const select = document.getElementById('projectSelect');
-            select.innerHTML = '';
-            projects.forEach(p => {
-                const opt = document.createElement('option');
-                opt.value = p.project_id;
-                opt.textContent = `${p.project_id} — ${p.name} (${p.district})`;
-                if (p.project_id === currentPid) opt.selected = true;
-                select.appendChild(opt);
-            });
-            loadProject(currentPid);
+            select.disabled = true;
+            select.innerHTML = '<option>Loading projects…</option>';
+            try {
+                const projects = await fetchJSON('/api/projects');
+                if (!Array.isArray(projects) || projects.length === 0) {
+                    throw new Error('No projects available in the database');
+                }
+                hideGlobalError();
+                select.innerHTML = '';
+                if (!projects.some(p => p.project_id === currentPid)) {
+                    currentPid = projects[0].project_id;
+                }
+                projects.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.project_id;
+                    opt.textContent = `${p.project_id} — ${p.name} (${p.district})`;
+                    if (p.project_id === currentPid) opt.selected = true;
+                    select.appendChild(opt);
+                });
+                select.disabled = false;
+                await loadProject(currentPid);
+            } catch (err) {
+                select.innerHTML = '<option>Unavailable</option>';
+                showGlobalError('Could not load the project list: ' + err.message + '. Is the intelligence server running?');
+            }
         }
 
         async function loadProject(pid) {
             currentPid = pid;
-            const res = await fetch(`/api/project/${pid}`);
-            const data = await res.json();
+            hideGlobalError();
+            // Clear stale panels from the previously selected project immediately
+            document.getElementById('claimResults').innerHTML = '';
+            document.getElementById('searchResults').innerHTML = '';
+            document.getElementById('discrepancyList').innerHTML = '<p class="text-xs text-slate-400">Loading audit discrepancies…</p>';
+            document.getElementById('projName').textContent = 'Loading…';
+            document.getElementById('projStatusBadge').classList.add('hidden');
+
+            let data;
+            try {
+                data = await fetchJSON(`/api/project/${pid}`);
+            } catch (err) {
+                document.getElementById('projName').textContent = 'Failed to load project';
+                document.getElementById('projReg').textContent = '--';
+                document.getElementById('projLocation').innerHTML = '<span class="text-rose-600">Project data could not be loaded. Try selecting the project again.</span>';
+                showGlobalError('Could not load project ' + pid + ': ' + err.message);
+                return;
+            }
+            document.getElementById('projStatusBadge').classList.remove('hidden');
 
             // Populate Banner
             document.getElementById('projName').textContent = data.project.name;
             document.getElementById('projReg').textContent = data.project.registration_number;
-            document.getElementById('projLocation').innerHTML = `<i class="fa-solid fa-location-dot text-slate-400 mr-1"></i> ${data.project.taluka || 'Gandhinagar'}, ${data.project.district} | Promoter: <b>${data.project.promoter_name}</b>`;
-            
+            document.getElementById('projLocation').innerHTML = `<i class="fa-solid fa-location-dot text-slate-400 mr-1"></i> ${esc(data.project.taluka || '—')}, ${esc(data.project.district)} | Promoter: <b>${esc(data.project.promoter_name)}</b>`;
+
             const mapLink = document.getElementById('projMapLink');
             if (data.project.google_maps_url) {
                 mapLink.href = data.project.google_maps_url;
@@ -745,7 +823,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             document.getElementById('kpiBooking').textContent = `${data.project.booking_rate_pct || 0}%`;
             document.getElementById('kpiProgress').textContent = `${(data.project.engg_score_pct || data.project.latest_form_one_progress_pct || 0).toFixed(1)}%`;
-            document.getElementById('kpiVelocity').textContent = data.project.velocity_ratio !== null ? `${data.project.velocity_ratio}x` : '--';
+            document.getElementById('kpiVelocity').textContent = (data.project.velocity_ratio !== null && data.project.velocity_ratio !== undefined) ? `${data.project.velocity_ratio}x` : '--';
             document.getElementById('kpiDeadline').textContent = data.project.completion_date || '--';
 
             // Escrow Liquidity KPI
@@ -763,8 +841,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             const escrowDiv = document.getElementById('escrowBankDetails');
             if (escrowAcc.bank_name) {
                 escrowDiv.innerHTML = `
-                    <div class="flex justify-between"><span>Bank & Branch:</span><b class="text-slate-800">${escrowAcc.bank_name} (${escrowAcc.branch_name || 'Main'})</b></div>
-                    <div class="flex justify-between"><span>Designated Account:</span><b class="font-mono text-slate-800">${escrowAcc.account_number_masked || '--'}</b></div>
+                    <div class="flex justify-between"><span>Bank & Branch:</span><b class="text-slate-800">${esc(escrowAcc.bank_name)} (${esc(escrowAcc.branch_name || 'Main')})</b></div>
+                    <div class="flex justify-between"><span>Designated Account:</span><b class="font-mono text-slate-800">${esc(escrowAcc.account_number_masked || '--')}</b></div>
                     <div class="flex justify-between"><span>Period Deposits:</span><span class="text-emerald-700 font-semibold">₹${((escrowAcc.deposit_amt||0)/100000).toFixed(2)} Lakhs</span></div>
                     <div class="flex justify-between"><span>Period Withdrawals:</span><span class="text-amber-700 font-semibold">₹${((escrowAcc.withdrawal_amt||0)/100000).toFixed(2)} Lakhs</span></div>
                     <div class="flex justify-between border-t border-slate-200 pt-1 font-bold"><span>Closing Liquidity:</span><span class="text-blue-800">₹${((escrowAcc.closing_bal||0)/100000).toFixed(2)} Lakhs</span></div>
@@ -799,14 +877,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             q2Div.innerHTML = '';
             if (data.timeline && data.timeline.length) {
                 data.timeline.forEach(t => {
+                    const progress = t.progress_percentage === null || t.progress_percentage === undefined ? 0 : t.progress_percentage;
                     const row = document.createElement('div');
                     row.className = 'flex items-center justify-between text-xs py-1 border-b border-slate-50';
-                    row.innerHTML = `<span class="text-slate-600 font-medium">${t.period_label}</span>
+                    row.innerHTML = `<span class="text-slate-600 font-medium">${esc(t.period_label)}</span>
                                      <div class="flex items-center gap-2">
                                         <div class="w-24 bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                                            <div class="bg-emerald-500 h-1.5 rounded-full" style="width: ${Math.min(100, t.progress_percentage)}%"></div>
+                                            <div class="bg-emerald-500 h-1.5 rounded-full" style="width: ${Math.min(100, progress)}%"></div>
                                         </div>
-                                        <span class="font-bold text-slate-800 w-12 text-right">${t.progress_percentage.toFixed(1)}%</span>
+                                        <span class="font-bold text-slate-800 w-12 text-right">${Number(progress).toFixed(1)}%</span>
                                      </div>`;
                     q2Div.appendChild(row);
                 });
@@ -823,18 +902,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             bTable.innerHTML = '';
             data.blocks.forEach(b => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td class="p-2 font-bold">${b.block_name}</td>
+                tr.innerHTML = `<td class="p-2 font-bold">${esc(b.block_name)}</td>
                                 <td class="p-2 text-center">${b.total_units}</td>
                                 <td class="p-2 text-center text-emerald-600 font-medium">${b.booked_units}</td>
                                 <td class="p-2 text-center text-amber-600 font-medium">${b.unbooked_units}</td>
-                                <td class="p-2 text-center font-bold">${b.booking_rate_pct.toFixed(1)}%</td>
+                                <td class="p-2 text-center font-bold">${Number(b.booking_rate_pct).toFixed(1)}%</td>
                                 <td class="p-2 text-center text-slate-500">${b.residential_units} Res / ${b.commercial_units} Comm</td>`;
                 bTable.appendChild(tr);
             });
 
             // Quadrant 4 Legal & Regulatory
-            document.getElementById('q4BuStatus').innerHTML = data.project.bu_status ? `<span class="text-emerald-700">${data.project.bu_status}</span>` : '<span class="text-amber-600">Pending / Unverified</span>';
-            document.getElementById('q4SocietyDate').innerHTML = data.project.society_reg_date ? `<span class="text-blue-700 font-mono">${data.project.society_reg_date}</span>` : '<span class="text-slate-400">Not Formed</span>';
+            document.getElementById('q4BuStatus').innerHTML = data.project.bu_status ? `<span class="text-emerald-700">${esc(data.project.bu_status)}</span>` : '<span class="text-amber-600">Pending / Unverified</span>';
+            document.getElementById('q4SocietyDate').innerHTML = data.project.society_reg_date ? `<span class="text-blue-700 font-mono">${esc(data.project.society_reg_date)}</span>` : '<span class="text-slate-400">Not Formed</span>';
 
             document.getElementById('q4Complaints').textContent = data.project.complaints_count || 0;
             document.getElementById('q4Alterations').textContent = data.project.alterations_count || 0;
@@ -862,12 +941,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             // Professionals & Contagion
             const profDiv = document.getElementById('q4Professionals');
-            profDiv.innerHTML = '<span class="font-semibold text-slate-700">Certified Team: </span>' + 
-                data.professionals.map(p => `<b>${p.role.toUpperCase()}:</b> ${p.name} ${p.license_or_reg_no ? '('+p.license_or_reg_no+')' : ''}`).join(' | ');
+            profDiv.innerHTML = '<span class="font-semibold text-slate-700">Certified Team: </span>' +
+                data.professionals.map(p => `<b>${esc(p.role.toUpperCase())}:</b> ${esc(p.name)} ${p.license_or_reg_no ? '('+esc(p.license_or_reg_no)+')' : ''}`).join(' | ');
 
             const priorDiv = document.getElementById('q4SisterProjects');
-            priorDiv.innerHTML = '<span class="font-semibold text-slate-700">Sister Schemes: </span>' + 
-                (data.prior_projects.length ? data.prior_projects.map(p => `${p.linked_project_name} (ID ${p.linked_project_id})`).join(', ') : 'None registered');
+            priorDiv.innerHTML = '<span class="font-semibold text-slate-700">Sister Schemes: </span>' +
+                (data.prior_projects.length ? data.prior_projects.map(p => `${esc(p.linked_project_name)} (ID ${p.linked_project_id})`).join(', ') : 'None registered');
 
             const contDiv = document.getElementById('q4Contagion');
             contDiv.innerHTML = '';
@@ -875,7 +954,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 data.contagion.forEach(c => {
                     const alert = document.createElement('div');
                     alert.className = 'p-2 rounded bg-amber-50 text-amber-900 border border-amber-200 text-xs mb-1';
-                    alert.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1 text-amber-600"></i> ${c.detail}`;
+                    alert.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1 text-amber-600"></i> ${esc(c.detail)}`;
                     contDiv.appendChild(alert);
                 });
             }
@@ -890,12 +969,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     card.className = `p-4 rounded-xl border ${badgeClass} text-xs`;
                     card.innerHTML = `
                         <div class="flex items-center justify-between mb-1">
-                            <span class="font-bold text-sm">${l.title}</span>
-                            <span class="px-2 py-0.5 rounded font-bold uppercase text-[10px] tracking-wider">${l.severity}</span>
+                            <span class="font-bold text-sm">${esc(l.title)}</span>
+                            <span class="px-2 py-0.5 rounded font-bold uppercase text-[10px] tracking-wider">${esc(l.severity)}</span>
                         </div>
-                        <p class="mb-2 opacity-90">${l.detail}</p>
+                        <p class="mb-2 opacity-90">${esc(l.detail)}</p>
                         <div class="p-2 bg-white/70 rounded border border-black/5">
-                            <b>Action / Verification:</b> ${l.reconciliation_guidance}
+                            <b>Action / Verification:</b> ${esc(l.reconciliation_guidance)}
                         </div>
                     `;
                     discDiv.appendChild(card);
@@ -926,7 +1005,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 { id: "agreement", name: "Model Agreement for Sale", desc: "Standard RERA contract terms between developer and allottees", query: "agreement for sale" },
                 { id: "form_four", name: "Form 4 Completion Certificate", desc: data.project.form_four_status ? `Status: ${data.project.form_four_status}` : "Pending final handover", query: "form four" }
             ];
-
             const vDiv = document.getElementById('vaultChecklist');
             vDiv.innerHTML = '';
             vaultList.forEach(item => {
@@ -938,7 +1016,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                             <span class="font-bold text-slate-800">${item.name}</span>
                             <span class="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded font-semibold">Statutory Check</span>
                         </div>
-                        <p class="text-slate-500 mb-3">${item.desc}</p>
+                        <p class="text-slate-500 mb-3">${esc(item.desc)}</p>
                     </div>
                     <button onclick="searchVaultDoc('${item.query}')" class="w-full py-1.5 bg-white hover:bg-blue-50 text-blue-700 border border-slate-200 hover:border-blue-300 rounded font-semibold text-center transition">
                         <i class="fa-solid fa-magnifying-glass mr-1"></i> Inspect Text in RAG
@@ -955,10 +1033,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         async function renderGraph() {
-            const res = await fetch(`/api/graph?project_id=${currentPid}`);
-            const data = await res.json();
-
             const container = document.getElementById('networkGraph');
+            let data;
+            try {
+                const res = await fetch(`/api/graph?project_id=${currentPid}`);
+                if (!res.ok) throw new Error('Request failed (HTTP ' + res.status + ')');
+                data = await res.json();
+            } catch (err) {
+                container.innerHTML = `<p class="text-xs text-rose-700 p-4">Knowledge graph could not be loaded: ${esc(err.message)}</p>`;
+                return;
+            }
             const graphData = {
                 nodes: new vis.DataSet(data.nodes),
                 edges: new vis.DataSet(data.edges)
@@ -988,6 +1072,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }
             networkInstance = new vis.Network(container, graphData, options);
 
+            // Visually highlight the node for the currently selected project so the
+            // graph reads as "this project's network", not an anonymous statewide web.
+            const currentNodeId = 'project:' + currentPid;
+            if (data.nodes.some(n => n.id === currentNodeId)) {
+                networkInstance.selectNodes([currentNodeId], false);
+            }
+
             networkInstance.on("click", function (params) {
                 if (params.nodes.length > 0) {
                     const nodeId = params.nodes[0];
@@ -995,14 +1086,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     if (node) {
                         document.getElementById('graphNodeTitle').textContent = node.label;
                         document.getElementById('graphNodeDesc').textContent = `Type: ${node.group} | ID: ${node.id}`;
-                        
+
                         // Find connected edges
                         const connected = data.edges.filter(e => e.from === nodeId || e.to === nodeId);
                         let html = `<div class="font-semibold text-slate-700 mb-1">Direct Links (${connected.length}):</div><ul class="list-disc pl-4 space-y-1">`;
                         connected.forEach(e => {
                             const otherId = e.from === nodeId ? e.to : e.from;
                             const otherNode = data.nodes.find(n => n.id === otherId);
-                            html += `<li><b>${e.label}:</b> ${otherNode ? otherNode.label : otherId}</li>`;
+                            html += `<li><b>${esc(e.label)}:</b> ${otherNode ? esc(otherNode.label) : esc(otherId)}</li>`;
                         });
                         html += `</ul>`;
                         document.getElementById('graphNodeDetails').innerHTML = html;
@@ -1012,8 +1103,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         async function loadPricing(pid) {
-            const res = await fetch(`/api/pricing/${pid}`);
-            const data = await res.json();
+            let data;
+            try {
+                data = await fetchJSON(`/api/pricing/${pid}`);
+            } catch (err) {
+                document.getElementById('prBlockTable').innerHTML = `<tr><td colspan="5" class="p-3 text-xs text-rose-700">Pricing data could not be loaded: ${esc(err.message)}</td></tr>`;
+                return;
+            }
             const ov = data.overall_rate_per_sqft || {};
 
             document.getElementById('prMin').textContent = ov.min ? `Rs. ${ov.min.toLocaleString()}` : '--';
@@ -1027,7 +1123,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             bTable.innerHTML = '';
             for (const [bname, stats] of Object.entries(data.block_benchmarks || {})) {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td class="p-2 font-bold">${bname}</td>
+                tr.innerHTML = `<td class="p-2 font-bold">${esc(bname)}</td>
                                 <td class="p-2 text-center">${stats.count}</td>
                                 <td class="p-2 text-center text-slate-600">Rs. ${stats.min ? stats.min.toLocaleString() : '--'}</td>
                                 <td class="p-2 text-center font-bold text-blue-700">Rs. ${stats.median ? stats.median.toLocaleString() : '--'}</td>
@@ -1040,8 +1136,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             rTable.innerHTML = '';
             (data.recent_registered_transactions || []).forEach(t => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td class="p-2">${t.agreement_date}</td>
-                                <td class="p-2 font-sans font-medium">${t.block}</td>
+                tr.innerHTML = `<td class="p-2">${esc(t.agreement_date)}</td>
+                                <td class="p-2 font-sans font-medium">${esc(t.block)}</td>
                                 <td class="p-2 text-center">${t.carpet_sqft} sq.ft</td>
                                 <td class="p-2 text-right">₹${(t.consideration_inr/100000).toFixed(2)} L</td>
                                 <td class="p-2 text-right font-bold text-blue-600">Rs. ${t.rate_sqft.toLocaleString()}</td>`;
@@ -1053,11 +1149,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             const price = document.getElementById('claimPrice').value;
             const sold = document.getElementById('claimSold').value;
             const date = document.getElementById('claimDate').value;
-
-            const res = await fetch(`/api/verify_claim?project_id=${currentPid}&claimed_rate=${price}&claimed_sold=${sold}&claimed_date=${date}`);
-            const data = await res.json();
-
             const resDiv = document.getElementById('claimResults');
+
+            if (!price && !sold && !date) {
+                resDiv.innerHTML = '<p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded-lg">Enter at least one claim above (price, % sold, or handover date) to run the verification.</p>';
+                return;
+            }
+
+            resDiv.innerHTML = '<p class="text-xs text-slate-500">Verifying claims against statutory disclosures…</p>';
+            let data;
+            try {
+                const res = await fetchJSON(`/api/verify_claim?project_id=${currentPid}&claimed_rate=${price}&claimed_sold=${sold}&claimed_date=${date}`);
+                data = res;
+            } catch (err) {
+                resDiv.innerHTML = `<p class="text-xs text-rose-800 bg-rose-50 border border-rose-200 p-3 rounded-lg">Verification failed: ${esc(err.message)}. Check that the entered values are valid numbers.</p>`;
+                return;
+            }
+
             resDiv.innerHTML = '';
 
             (data.verification_checks || []).forEach(c => {
@@ -1066,16 +1174,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 card.className = `p-4 rounded-xl border text-xs ${isBad ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-emerald-50 border-emerald-300 text-emerald-900'}`;
                 card.innerHTML = `
                     <div class="flex items-center justify-between mb-1.5">
-                        <span class="font-bold text-sm">${c.metric}</span>
-                        <span class="px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[10px] ${isBad ? 'bg-amber-200 text-amber-900' : 'bg-emerald-200 text-emerald-900'}">${c.verdict}</span>
+                        <span class="font-bold text-sm">${esc(c.metric)}</span>
+                        <span class="px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[10px] ${isBad ? 'bg-amber-200 text-amber-900' : 'bg-emerald-200 text-emerald-900'}">${esc(c.verdict)}</span>
                     </div>
                     <div class="grid grid-cols-2 gap-2 text-xs mb-2">
-                        <div><b>Sales Pitch:</b> ${c.claimed}</div>
-                        <div><b>Statutory Reality:</b> ${c.statutory_actual}</div>
+                        <div><b>Sales Pitch:</b> ${esc(c.claimed)}</div>
+                        <div><b>Statutory Reality:</b> ${esc(c.statutory_actual)}</div>
                     </div>
-                    <p class="mb-2 opacity-95">${c.detail}</p>
+                    <p class="mb-2 opacity-95">${esc(c.detail)}</p>
                     <div class="p-2 bg-white/70 rounded border border-black/5 font-medium">
-                        <i class="fa-solid fa-lightbulb text-amber-600 mr-1"></i> <b>Negotiation Advice:</b> ${c.buyer_guidance}
+                        <i class="fa-solid fa-lightbulb text-amber-600 mr-1"></i> <b>Negotiation Advice:</b> ${esc(c.buyer_guidance)}
                     </div>
                 `;
                 resDiv.appendChild(card);
@@ -1083,13 +1191,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         async function executeSearch() {
-            const query = document.getElementById('searchInput').value;
-            if (!query) return;
-
-            const res = await fetch(`/api/search?query=${encodeURIComponent(query)}&project_id=${currentPid}`);
-            const data = await res.json();
-
+            const query = document.getElementById('searchInput').value.trim();
             const resDiv = document.getElementById('searchResults');
+            if (!query) {
+                resDiv.innerHTML = '<p class="text-xs text-slate-500 p-3 bg-slate-50 rounded border border-slate-200">Enter a keyword above to search the indexed statutory document pages.</p>';
+                return;
+            }
+
+            resDiv.innerHTML = '<p class="text-xs text-slate-500">Searching indexed filings…</p>';
+            let data;
+            try {
+                data = await fetchJSON(`/api/search?query=${encodeURIComponent(query)}&project_id=${currentPid}`);
+            } catch (err) {
+                resDiv.innerHTML = `<p class="text-xs text-rose-800 bg-rose-50 border border-rose-200 p-3 rounded-lg">Search failed: ${esc(err.message)}</p>`;
+                return;
+            }
+
             resDiv.innerHTML = '';
 
             if (data.results && data.results.length) {
@@ -1098,12 +1215,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     card.className = 'p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs';
                     card.innerHTML = `
                         <div class="flex items-center justify-between mb-1">
-                            <span class="font-bold text-slate-800">${idx+1}. [${r.doc_type}] Page ${r.page_number}</span>
-                            <span class="text-[10px] text-slate-400 font-mono">BM25: ${r.rank}</span>
+                            <span class="font-bold text-slate-800">${idx+1}. [${esc(r.doc_type)}] Page ${esc(r.page_number)}</span>
+                            <span class="text-[10px] text-slate-400">Result ${idx+1} of ${data.results.length}</span>
                         </div>
-                        <p class="text-slate-600 font-mono text-[11px] mb-1.5 text-slate-500">${r.file_name}</p>
+                        <p class="text-slate-600 font-mono text-[11px] mb-1.5 text-slate-500">${esc(r.file_name)}</p>
                         <div class="p-2 bg-white rounded border border-slate-200 text-slate-800 font-serif leading-relaxed">
-                            ${r.snippet}
+                            ${escSnippet(r.snippet)}
                         </div>
                     `;
                     resDiv.appendChild(card);
@@ -1114,9 +1231,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         function switchTab(tabId) {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.classList.remove('active');
+                b.setAttribute('aria-selected', 'false');
+                b.setAttribute('tabindex', '-1');
+            });
             document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
-            document.getElementById(`tab-${tabId}`).classList.add('active');
+            const activeBtn = document.getElementById(`tab-${tabId}`);
+            activeBtn.classList.add('active');
+            activeBtn.setAttribute('aria-selected', 'true');
+            activeBtn.removeAttribute('tabindex');
+            activeBtn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
             document.getElementById(`content-${tabId}`).classList.remove('hidden');
 
             if (tabId === 'graph' && networkInstance) {
@@ -1339,9 +1464,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         function toggleCopilot() {
             const d = document.getElementById('copilotDrawer');
+            const launcher = document.getElementById('copilotLauncherBtn');
             d.classList.toggle('hidden');
             if (!d.classList.contains('hidden')) {
+                launcher.classList.add('hidden');
                 document.getElementById('copilotInput').focus();
+            } else {
+                launcher.classList.remove('hidden');
             }
         }
 
@@ -1491,6 +1620,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 .replace(/^### (.*$)/gim, '<div class="font-bold text-slate-900 border-b border-slate-100 pb-1 mb-1 text-xs">$1</div>');
         }
 
+        // Keyboard support: Esc closes the copilot drawer; arrow keys move between dashboard tabs.
+        document.addEventListener('keydown', (e) => {
+            const drawer = document.getElementById('copilotDrawer');
+            if (e.key === 'Escape' && drawer && !drawer.classList.contains('hidden')) {
+                toggleCopilot();
+                return;
+            }
+            if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+            const tabs = Array.from(document.querySelectorAll('#tabStrip .tab-btn'));
+            const idx = tabs.findIndex(t => t.classList.contains('active'));
+            if (idx === -1) return;
+            const nextIdx = e.key === 'ArrowRight' ? (idx + 1) % tabs.length : (idx - 1 + tabs.length) % tabs.length;
+            const nextBtn = tabs[nextIdx];
+            nextBtn.focus();
+            nextBtn.click();
+        });
+
         window.onload = init;
     </script>
 </body>
@@ -1556,7 +1702,10 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             finances = [dict(r) for r in self.con.execute("SELECT * FROM finances WHERE project_id = ? ORDER BY id ASC", (pid,)).fetchall()]
             professionals = [dict(r) for r in self.con.execute("SELECT role, name, firm_name, license_or_reg_no FROM professionals WHERE project_id = ?", (pid,)).fetchall()]
             banks = [dict(r) for r in self.con.execute("SELECT * FROM banks WHERE project_id = ? ORDER BY account_type ASC", (pid,)).fetchall()]
-            prior = [dict(r) for r in self.con.execute("SELECT linked_project_name, linked_project_id FROM previous_projects WHERE project_id = ?", (pid,)).fetchall()]
+            prior = [dict(r) for r in self.con.execute(
+                "SELECT linked_project_name, linked_project_id FROM previous_projects WHERE project_id = ? AND linked_project_id != ?",
+                (pid, pid),
+            ).fetchall()]
             form5 = [dict(r) for r in self.con.execute("SELECT * FROM form5_compliance WHERE project_id = ? ORDER BY financial_year ASC", (pid,)).fetchall()]
             bu_records = [dict(r) for r in self.con.execute("SELECT * FROM noc_bu_records WHERE project_id = ? ORDER BY block_name ASC", (pid,)).fetchall()]
             
@@ -1636,9 +1785,13 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/verify_claim":
-            pid = int(query.get("project_id", [0])[0])
-            price = float(query["claimed_rate"][0]) if query.get("claimed_rate", [""])[0] else None
-            sold = float(query["claimed_sold"][0]) if query.get("claimed_sold", [""])[0] else None
+            try:
+                pid = int(query.get("project_id", [0])[0])
+                price = float(query["claimed_rate"][0]) if query.get("claimed_rate", [""])[0] else None
+                sold = float(query["claimed_sold"][0]) if query.get("claimed_sold", [""])[0] else None
+            except (TypeError, ValueError):
+                self.send_error(400, "Invalid numeric parameter")
+                return
             date = query.get("claimed_date", [None])[0] or None
 
             res = self.verifier.verify_claim(
@@ -1997,7 +2150,7 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
                 else:
                     reply_lines.append("- **Statutory Audit Verdict**: Fully compliant with RERA Section 4(2)(l)(D) Proviso 1. Cumulative withdrawals remain within physical construction completion limits.")
 
-                if runway.get("runway_status") != "UNKNOWN":
+                if runway.get("narrative"):
                     reply_lines.append(f"- **Cash Runway Assessment**: {runway.get('narrative')}")
 
                 citations.extend([
@@ -2140,7 +2293,12 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
 
 def start_server(port: int = 8765, db_path=None):
     IntelligenceRequestHandler.setup_backends(db_path)
-    server = HTTPServer(("127.0.0.1", port), IntelligenceRequestHandler)
+    # ThreadingHTTPServer so a slow request (e.g. an agentic LLM copilot call) cannot
+    # freeze every other dashboard request. The shared SQLite connection is opened with
+    # check_same_thread=False and 30 s busy_timeout (db.database.get_connection), and the
+    # UI never writes, so concurrent read traffic is safe under WAL.
+    server = ThreadingHTTPServer(("127.0.0.1", port), IntelligenceRequestHandler)
+    server.daemon_threads = True
     print(f"\n[READY] Real Estate Intelligence Terminal running at: http://127.0.0.1:{port}", flush=True)
     print("Press Ctrl+C to stop the server.", flush=True)
     try:
