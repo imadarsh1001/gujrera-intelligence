@@ -1116,10 +1116,16 @@
             const revDiv = document.getElementById('q4Revision');
             const revState = REVISION_LABELS[data.revision_state] || REVISION_LABELS.insufficient_history;
             const revDates = data.revision_evidence_dates || [];
-            revDiv.innerHTML = '<span class="font-semibold text-slate-700">Completion-date status: </span>'
-                + `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${revState.cls}">${revState.text}</span>`
-                + (revDates.length ? ` <span class="text-[10px] text-slate-400">extension applied ${esc(revDates.join(', '))}</span>` : '')
-                + '<div class="text-[10px] text-slate-400 mt-1">Under review: how this status should treat a project completing early, or future changes to the declared date.</div>';
+            const actioned = data.revision_actioned_dates || [];
+            let revLine = '<span class="font-semibold text-slate-700">Completion-date status: </span>'
+                + `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${revState.cls}">${revState.text}</span>`;
+            if (revDates.length) {
+                revLine += ` <span class="text-[10px] text-slate-400">extension applied ${esc(revDates.join(', '))}`;
+                if (actioned.length) revLine += ` · actioned ${esc(actioned.join(', '))}`;
+                revLine += ' — approval status not disclosed by the portal</span>';
+            }
+            revLine += '<div class="text-[10px] text-slate-400 mt-1">Under review: how this status should treat a project completing early, or future changes to the declared date.</div>';
+            revDiv.innerHTML = revLine;
 
             // Professionals & Contagion
             const profDiv = document.getElementById('q4Professionals');

@@ -234,7 +234,7 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             contagion = self.graph_engine.trace_contagion_risk(pid)
 
             ext_rows = self.con.execute(
-                "SELECT apply_date FROM applications WHERE project_id = ? AND application_type = 'Extension'",
+                "SELECT apply_date, approval_date FROM applications WHERE project_id = ? AND application_type = 'Extension'",
                 (pid,),
             ).fetchall()
             filings_count = self.con.execute(
@@ -257,6 +257,9 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
                 "revision_state": _revision_state(filings_count, len(ext_rows)),
                 "revision_evidence_dates": sorted(
                     dt.date().isoformat() for dt in (_parse_timestamp(r["apply_date"]) for r in ext_rows) if dt
+                ),
+                "revision_actioned_dates": sorted(
+                    dt.date().isoformat() for dt in (_parse_timestamp(r["approval_date"]) for r in ext_rows) if dt
                 ),
             })
             return

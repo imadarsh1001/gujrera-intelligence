@@ -306,6 +306,7 @@ class TestUIServerEndpoints(unittest.TestCase):
         # revision summary fields ride along for the Project Detail section
         self.assertIn(data["revision_state"], {"revision_observed", "no_revision_observed", "insufficient_history"})
         self.assertIsInstance(data["revision_evidence_dates"], list)
+        self.assertIsInstance(data["revision_actioned_dates"], list)
         self.assertGreaterEqual(data["filings_count"], 1)
 
     def test_search_invalid_project_id_returns_400(self):

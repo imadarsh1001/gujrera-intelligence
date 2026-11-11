@@ -561,8 +561,15 @@ def ingest_from_run(
         for app in app_list or []:
             if isinstance(app, dict):
                 target_con.execute(
-                    "INSERT INTO applications (project_id, application_type, application_status, apply_date) VALUES (?, ?, ?, ?)",
-                    (pid, app.get("applicationType") or "Unknown", app.get("applicationStatus"), app.get("submissionDate") or app.get("applyDate")),
+                    "INSERT INTO applications (project_id, application_type, application_status, apply_date, approval_date, final_status) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        pid,
+                        app.get("applicationType") or "Unknown",
+                        app.get("applicationStatus"),
+                        app.get("submissionDate") or app.get("applyDate"),
+                        app.get("approvalDate"),
+                        app.get("finalStatus"),
+                    ),
                 )
                 stats["applications"] += 1
 

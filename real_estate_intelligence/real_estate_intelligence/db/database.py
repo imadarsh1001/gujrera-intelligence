@@ -197,6 +197,8 @@ def init_schema(con: sqlite3.Connection) -> None:
             application_type TEXT NOT NULL,
             application_status TEXT,
             apply_date TEXT,
+            approval_date TEXT,
+            final_status TEXT,
             FOREIGN KEY (project_id) REFERENCES projects(project_id)
         );
 
@@ -300,6 +302,12 @@ def init_schema(con: sqlite3.Connection) -> None:
         con.execute("ALTER TABLE unit_transactions ADD COLUMN run_id TEXT DEFAULT 'default_run';")
     if "asset_class" not in unit_cols:
         con.execute("ALTER TABLE unit_transactions ADD COLUMN asset_class TEXT DEFAULT 'Residential';")
+
+    app_cols = {r[1] for r in cur.execute("PRAGMA table_info(applications)").fetchall()}
+    if "approval_date" not in app_cols:
+        con.execute("ALTER TABLE applications ADD COLUMN approval_date TEXT;")
+    if "final_status" not in app_cols:
+        con.execute("ALTER TABLE applications ADD COLUMN final_status TEXT;")
 
     con.execute("CREATE INDEX IF NOT EXISTS idx_unit_asset_class ON unit_transactions(asset_class);")
     con.execute("CREATE INDEX IF NOT EXISTS idx_projects_run ON projects(run_id);")
