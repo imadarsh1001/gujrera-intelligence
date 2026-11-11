@@ -1578,7 +1578,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 let citationsHtml = '';
                 if (data.citations && data.citations.length) {
                     citationsHtml = '<div class="pt-2 border-t border-slate-100 mt-2 space-y-1">' +
-                        data.citations.map(c => `<span class="inline-block px-1.5 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded font-mono text-[9px] mr-1">${c}</span>`).join('') +
+                        data.citations.map(c => `<span class="inline-block px-1.5 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded font-mono text-[9px] mr-1">${esc(c)}</span>`).join('') +
                         '</div>';
                 }
 
@@ -1614,7 +1614,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         function formatBotReply(str) {
-            return str
+            // Escape untrusted reply text (filing-derived strings, LLM output) BEFORE
+            // applying the markdown transforms, which then inject only our own tags.
+            return esc(str)
                 .replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>')
                 .replace(/^\\* (.*$)/gim, '• $1')
                 .replace(/^### (.*$)/gim, '<div class="font-bold text-slate-900 border-b border-slate-100 pb-1 mb-1 text-xs">$1</div>');
@@ -1805,25 +1807,41 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/search":
             q = query.get("query", [""])[0]
-            pid = int(query["project_id"][0]) if query.get("project_id") else None
+            try:
+                pid = int(query["project_id"][0]) if query.get("project_id") else None
+            except (TypeError, ValueError):
+                self.send_error(400, "Invalid project ID")
+                return
             results = self.search_engine.search(query=q, project_id=pid, limit=10)
             self._send_json({"query": q, "results": results})
             return
 
         if path == "/api/analytics/survival":
-            pid = int(query.get("project_id", [0])[0])
+            try:
+                pid = int(query.get("project_id", [0])[0])
+            except (TypeError, ValueError):
+                self.send_error(400, "Invalid project ID")
+                return
             res = self.mcp_server.forecast_completion_delay(pid)
             self._send_json(res)
             return
 
         if path == "/api/analytics/pricing_trend":
-            pid = int(query.get("project_id", [0])[0])
+            try:
+                pid = int(query.get("project_id", [0])[0])
+            except (TypeError, ValueError):
+                self.send_error(400, "Invalid project ID")
+                return
             res = self.pricing_engine.get_longitudinal_pricing_trend(pid)
             self._send_json(res)
             return
 
         if path == "/api/analytics/ml_pricing":
-            pid = int(query.get("project_id", [0])[0])
+            try:
+                pid = int(query.get("project_id", [0])[0])
+            except (TypeError, ValueError):
+                self.send_error(400, "Invalid project ID")
+                return
             aclass = query.get("asset_class", ["Residential"])[0]
             try:
                 carpet = float(query.get("carpet_area_sqft", [1200.0])[0])
@@ -2272,8 +2290,12 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             return {"reply": "\n".join(reply_lines), "citations": citations}
 
         except Exception as err:
+            # Full detail stays in the server log; the client gets a sanitized note
+            # (raw exception text can leak filesystem paths).
+            import logging
+            logging.getLogger(__name__).warning("Copilot query failed: %s", err, exc_info=True)
             return {
-                "reply": f"### Diligence Query Service Note\nEncountered an internal processing notice: `{err}`. Please select a quick prompt below or rephrase your inquiry.",
+                "reply": "### Diligence Query Service Note\nAn internal processing error occurred while answering. Please rephrase your inquiry or try one of the quick prompts below.",
                 "citations": ["GujRERA Statutory Fact Base"]
             }
 
@@ -2283,12 +2305,27 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
         }
 
     def _send_json(self, data):
-        raw = json.dumps(data, default=str, ensure_ascii=False).encode("utf-8")
+        try:
+            raw = json.dumps(data, default=str, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        except ValueError:
+            # Degenerate aggregates (NaN/Inf, e.g. medians over empty groups) are not
+            # valid JSON; null them out rather than emitting tokens browsers reject.
+            raw = json.dumps(self._sanitize_nan(data), default=str, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
+
+    @staticmethod
+    def _sanitize_nan(value):
+        if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+            return None
+        if isinstance(value, dict):
+            return {k: IntelligenceRequestHandler._sanitize_nan(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [IntelligenceRequestHandler._sanitize_nan(v) for v in value]
+        return value
 
 
 def start_server(port: int = 8765, db_path=None):

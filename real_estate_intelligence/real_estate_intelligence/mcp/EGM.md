@@ -21,7 +21,7 @@ Public methods on `RealEstateIntelligenceMCP(db_path=None)` [server.py:RealEstat
 
 ## Invariants
 - The class is documented and used as read-only: no method inserts or updates database rows [server.py:RealEstateIntelligenceMCP]
-- `predict_pricing_benchmark` trains `HedonicPricingModel(n_estimators=25, max_depth=3)` once and caches it in `_pricing_model`; `forecast_completion_delay` likewise lazily caches `_survival_model` — first calls pay a full training scan [server.py:predict_pricing_benchmark], [server.py:forecast_completion_delay]
+- `predict_pricing_benchmark` trains `HedonicPricingModel(n_estimators=25, max_depth=3)` once and caches it in `_pricing_model`; `forecast_completion_delay` likewise lazily caches `_survival_model` — first calls pay a full training scan, and both lazy initializations are double-checked under a shared `threading.Lock` (`_model_lock`) so concurrent first calls under the dashboard's threaded server train exactly once [server.py:predict_pricing_benchmark], [server.py:forecast_completion_delay]
 - Constructor signature is `db_path`, but any `sqlite3.Connection` passed as `db_path` is returned unchanged by `db.database.get_connection`, so the UI can share its live connection [server.py:RealEstateIntelligenceMCP]
 - `get_escrow_health` liquidity threshold is `< 50,000` INR closing balance on type-1 accounts [server.py:get_escrow_health]
 - Unknown project IDs produce `{"error": f"Project {project_id} not found..."}` dicts (or a `ValueError` propagated from the dossier generator) rather than exceptions for most tools [server.py:get_land_records], [server.py:get_regulatory_radar]
@@ -29,7 +29,7 @@ Public methods on `RealEstateIntelligenceMCP(db_path=None)` [server.py:RealEstat
 ## Side Effects
 - Opens a SQLite connection via `db.database.get_connection(db_path)` at construction (default [../config.py:DEFAULT_DB_PATH]); the connection lives for the object's lifetime and is not closed by this class [server.py:RealEstateIntelligenceMCP]
 - Indirect writes during construction: `get_connection` applies pragmas and `init_schema`, and `KnowledgeGraph.__init__` creates `graph_nodes`/`graph_edges` tables if absent [server.py:RealEstateIntelligenceMCP]
-- Lazy training on first `predict_pricing_benchmark` / `forecast_completion_delay` call reads the full `unit_transactions` / `projects` tables (CPU-heavy, no writes) [server.py:predict_pricing_benchmark], [server.py:forecast_completion_delay]
+- Lazy training on first `predict_pricing_benchmark` / `forecast_completion_delay` call reads the full `unit_transactions` / `projects` tables (CPU-heavy, no writes); serialized by `_model_lock` across threads [server.py:predict_pricing_benchmark], [server.py:forecast_completion_delay]
 
 ## Verification
 - Run: `python -m pytest real_estate_intelligence/tests`

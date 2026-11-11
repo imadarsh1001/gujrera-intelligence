@@ -83,8 +83,11 @@ class KnowledgeGraph:
             self._insert_node(bank_node, "Bank", bname)
             self._insert_edge(f"project:{row['project_id']}", "ESCROW_AT", bank_node)
 
-        # 5. Previous Projects
-        cur.execute("SELECT project_id, linked_project_name, linked_project_id FROM previous_projects")
+        # 5. Previous Projects — self-links excluded so a project is never its own prior node
+        cur.execute(
+            "SELECT project_id, linked_project_name, linked_project_id FROM previous_projects "
+            "WHERE linked_project_id IS NOT NULL AND linked_project_id != project_id"
+        )
         for row in cur.fetchall():
             lp_name = row["linked_project_name"] or f"Project_{row['linked_project_id']}"
             lp_id = row["linked_project_id"] or "".join(c for c in lp_name.lower() if c.isalnum())

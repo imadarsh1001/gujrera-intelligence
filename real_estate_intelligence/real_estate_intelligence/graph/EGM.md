@@ -12,6 +12,7 @@ Relational knowledge-graph engine over the curated SQLite database. `KnowledgeGr
 ## Invariants
 - Node IDs follow fixed formats: `project:{id}`, `promoter:{id}`, `professional:{role}:{normalized_name}`, `bank:{normalized_bank_name}`, `prior_project:{id or alphanumeric name}` [network.py:build_graph]
 - Edge relations are fixed: `DEVELOPED_BY`, `DESIGNED_BY`, `ENGINEERED_BY`, `AUDITED_BY`, `CONSTRUCTED_BY`, `ESCROW_AT`, `PRIOR_PORTFOLIO`, with `ASSOCIATED_WITH` as the fallback for unknown professional roles [network.py:build_graph]
+- `PRIOR_PORTFOLIO` edges exclude self-links: `previous_projects` rows whose `linked_project_id` equals the owning `project_id` (or is NULL) produce no prior-project node or edge [network.py:build_graph]
 - `graph_edges` primary key is `(src_id, relation, dst_id)`; both insert helpers use `INSERT OR REPLACE`, so `build_graph()` is idempotent over the same data [network.py:_insert_edge]
 - `trace_contagion_risk` only flags linked projects that have rows in `applications` with `application_type = 'Complaint'`; every lead is emitted with `risk_type = 'PROFESSIONAL_LINKED_COMPLAINT'` and `severity = 'MEDIUM'` [network.py:trace_contagion_risk]
 - Node `kind` values are `Project`, `Promoter`, `Bank`, `PriorProject`, and the capitalized professional role (`Architect`, `Engineer`, `Ca`, `Contractor`) — note the `Ca` casing, which the UI color map also keys on [network.py:build_graph]

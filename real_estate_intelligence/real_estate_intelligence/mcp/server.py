@@ -1,6 +1,7 @@
 """Model Context Protocol (MCP) tool server for AI pair programming and agent integration."""
 
 import json
+import threading
 from typing import Any, Dict, List, Optional
 
 from ..analytics.audit import ProjectAuditor
@@ -24,6 +25,10 @@ class RealEstateIntelligenceMCP:
         self.spatial = SpatialAnalytics(self.con)
         self._pricing_model: Optional[HedonicPricingModel] = None
         self._survival_model: Optional[CompletionDelaySurvivalModel] = None
+        # Guards lazy model training: the dashboard serves requests on threads
+        # (ThreadingHTTPServer shares one MCP instance), so two concurrent first
+        # calls must not both run a full training scan.
+        self._model_lock = threading.Lock()
 
     def get_project_dossier(self, project_id: int) -> str:
         """Generate a complete 4-quadrant executive diligence dossier for a project.
@@ -230,8 +235,11 @@ class RealEstateIntelligenceMCP:
             carpet_area_sqft: Unit carpet area in square feet.
         """
         if self._pricing_model is None:
-            self._pricing_model = HedonicPricingModel(n_estimators=25, max_depth=3)
-            self._pricing_model.train_from_db(self.con)
+            with self._model_lock:
+                if self._pricing_model is None:  # double-checked: first concurrent caller trains, rest reuse
+                    model = HedonicPricingModel(n_estimators=25, max_depth=3)
+                    model.train_from_db(self.con)
+                    self._pricing_model = model
 
         p_row = self.con.execute(
             """
@@ -266,8 +274,11 @@ class RealEstateIntelligenceMCP:
             project_id: GujRERA project registration ID.
         """
         if self._survival_model is None:
-            self._survival_model = CompletionDelaySurvivalModel()
-            self._survival_model.train_from_db(self.con)
+            with self._model_lock:
+                if self._survival_model is None:  # double-checked: first concurrent caller trains, rest reuse
+                    model = CompletionDelaySurvivalModel()
+                    model.train_from_db(self.con)
+                    self._survival_model = model
 
         return self._survival_model.forecast_project_by_id(self.con, project_id)
 

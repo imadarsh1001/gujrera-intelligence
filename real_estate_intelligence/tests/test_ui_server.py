@@ -304,6 +304,18 @@ class TestUIServerEndpoints(unittest.TestCase):
         prior_ids = [p["linked_project_id"] for p in data.get("prior_projects", [])]
         self.assertNotIn(16562, prior_ids)
 
+    def test_search_invalid_project_id_returns_400(self):
+        code, _ = self._make_get_request("/api/search?query=encumbrance&project_id=abc")
+        self.assertEqual(code, 400)
+
+    def test_analytics_invalid_project_id_returns_400(self):
+        code, _ = self._make_get_request("/api/analytics/pricing_trend?project_id=notanumber")
+        self.assertEqual(code, 400)
+        code, _ = self._make_get_request("/api/analytics/survival?project_id=notanumber")
+        self.assertEqual(code, 400)
+        code, _ = self._make_get_request("/api/analytics/ml_pricing?project_id=notanumber")
+        self.assertEqual(code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()
