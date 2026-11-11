@@ -19,7 +19,7 @@ Six lenses reviewed the pre-review draft (`concepts_brief-2026-11-11-pre-review.
 
 ### Findings confirmed correct (kept)
 
-The data-gating discipline, evidence-first framing, no-migration call, cutoff-date printing, "not stated, never zero" rule, absence-of-records-is-not-absence-of-cases rule, localStorage shortlist (~10 lines, in-repo precedent `copilot_api_key`), URL-hash state as migration insurance, and the statewide deferral were all endorsed. Scenario 1's "5 of 9 qualify" is exact; filing freshness genuinely discriminates (latest filings span 2025-12-16 → 2026-10-07).
+The data-gating discipline, evidence-first framing, no-migration call, cutoff-date printing, "not stated, never zero" rule, absence-of-records-is-not-absence-of-cases rule, localStorage shortlist (~10 lines, in-repo precedent `copilot_api_key`), URL-hash state as migration insurance, and the statewide deferral were all endorsed. Filing freshness genuinely discriminates (latest filings span 2025-12-16 → 2026-10-07). Scenario 1's filter (Gandhinagar, completion ≤ 2028-12-31) matches 6 of 9 projects — corrected from the pre-review draft's "5 of 9" during live verification of the shipped Explore filter.
 
 ### Blockers
 

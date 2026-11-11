@@ -316,6 +316,83 @@ class TestUIServerEndpoints(unittest.TestCase):
         code, _ = self._make_get_request("/api/analytics/ml_pricing?project_id=notanumber")
         self.assertEqual(code, 400)
 
+    def test_static_assets_served_and_traversal_blocked(self):
+        code, body = self._make_get_request("/static/vendor/chart.umd.min.js")
+        self.assertEqual(code, 200)
+        self.assertGreater(len(body), 1000)
+        code, _ = self._make_get_request("/static/missing.js")
+        self.assertEqual(code, 404)
+        # path traversal out of the static directory must be refused
+        code, _ = self._make_get_request("/static/../server.py")
+        self.assertEqual(code, 404)
+
+    def test_revision_state_pure_function(self):
+        from real_estate_intelligence.ui.server import _revision_state
+        self.assertEqual(_revision_state(1, 0), "insufficient_history")
+        self.assertEqual(_revision_state(0, 2), "insufficient_history")
+        self.assertEqual(_revision_state(2, 0), "no_revision_observed")
+        self.assertEqual(_revision_state(2, 1), "revision_observed")
+        self.assertEqual(_revision_state(5, 3), "revision_observed")
+
+    def test_api_explore_shape_and_fields(self):
+        code, body = self._make_get_request("/api/explore")
+        self.assertEqual(code, 200)
+        rows = json.loads(body.decode("utf-8"))
+        self.assertIsInstance(rows, list)
+        self.assertGreaterEqual(len(rows), 1)
+        required = {"project_id", "name", "registration_number", "district", "taluka", "project_type",
+                    "promoter_name", "completion_date", "progress_pct", "complaints_count", "extensions_count",
+                    "filings_count", "latest_filing_date", "days_since_latest_filing", "revision_state",
+                    "revision_evidence_dates", "unit_types", "min_price_booked", "min_rate_sqft_booked",
+                    "price_date_min", "price_date_max", "booked_by_unit_type", "architects"}
+        row = rows[0]
+        for key in required:
+            self.assertIn(key, row)
+        self.assertIn(row["revision_state"], {"revision_observed", "no_revision_observed", "insufficient_history"})
+        self.assertIsInstance(row["booked_by_unit_type"], dict)
+        self.assertIsInstance(row["unit_types"], list)
+        self.assertIsInstance(row["architects"], list)
+
+    def test_api_explore_price_columns_booked_only(self):
+        code, body = self._make_get_request("/api/explore")
+        rows = {r["project_id"]: r for r in json.loads(body.decode("utf-8"))}
+        pid = 16562
+        self.assertIn(pid, rows)
+        expected = IntelligenceRequestHandler.con.execute(
+            "SELECT MIN(rate_per_sqft) FROM unit_transactions WHERE project_id = ? AND status = 'BOOKED' AND rate_per_sqft > 0",
+            (pid,),
+        ).fetchone()[0]
+        got = rows[pid]["min_rate_sqft_booked"]
+        if expected is None:
+            self.assertIsNone(got)
+        else:
+            self.assertAlmostEqual(got, expected, places=2)
+        # UNBOOKED declared prices must not leak into the aggregate
+        unbooked_min = IntelligenceRequestHandler.con.execute(
+            "SELECT MIN(rate_per_sqft) FROM unit_transactions WHERE project_id = ? AND status != 'BOOKED' AND rate_per_sqft > 0",
+            (pid,),
+        ).fetchone()[0]
+        if unbooked_min is not None and unbooked_min < expected:
+            self.assertGreaterEqual(got, expected)
+
+    def test_api_explore_empty_db(self):
+        import os
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
+        tmp.close()
+        try:
+            IntelligenceRequestHandler.setup_backends(tmp.name)
+            code, body = self._make_get_request("/api/explore")
+            self.assertEqual(code, 200)
+            self.assertEqual(json.loads(body.decode("utf-8")), [])
+        finally:
+            IntelligenceRequestHandler.con.close()
+            IntelligenceRequestHandler.setup_backends(type(self).db_path)
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+
 
 if __name__ == "__main__":
     unittest.main()

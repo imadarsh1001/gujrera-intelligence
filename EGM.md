@@ -9,7 +9,7 @@ This workspace holds the GujRERA sovereign real-estate intelligence platform for
 
 The data seam between the repos is a **run directory**: the pipeline writes `gujrera_pipeline/data/runs/<run-id>/` (gzip raw responses + `manifest.sqlite`); the intelligence platform's read-side (`DiskRunReader`, read-only SQLite `mode=ro`) consumes those run directories and ingests them into a curated SQLite database (`real_estate_intelligence/data/intelligence.sqlite`), from which analytics, knowledge graph, MCP tools, agent, and UI read.
 
-Execution surfaces (all grounded in child contracts): a 14-subcommand CLI (`python -m real_estate_intelligence`), a stdlib single-threaded HTTP dashboard bound to `127.0.0.1:8765`, an in-process MCP tool class (no network listener), and a rate-limited curl-based collector with bounded `ThreadPoolExecutor` fan-out.
+Execution surfaces (all grounded in child contracts): a 14-subcommand CLI (`python -m real_estate_intelligence`), a stdlib multi-threaded HTTP dashboard (`ThreadingHTTPServer`, bound to `127.0.0.1:8765`, serving `ui/static/` with vendored assets), an in-process MCP tool class (no network listener), and a rate-limited curl-based collector with bounded `ThreadPoolExecutor` fan-out.
 
 Root-level files:
 
