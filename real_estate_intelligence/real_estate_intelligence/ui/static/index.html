@@ -183,13 +183,16 @@
                                 <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider"><i class="fa-solid fa-map-location-dot mr-1.5 text-blue-600"></i>Locations</h3>
                                 <span class="text-[10px] text-slate-400">real GPS from filings</span>
                             </div>
-                            <p class="text-[10px] text-slate-400 mb-2">Click a pin to find the project in the table. Outline approximate; pin positions use the coordinates recorded in the filings.</p>
+                            <p class="text-[10px] text-slate-400 mb-2">Click a district to zoom the map and filter the table to it; click a pin for the project. Boundaries simplified; pin positions use the coordinates recorded in the filings.</p>
                             <div id="mapWrap" class="relative">
-                                <svg id="gujaratMap" viewBox="0 0 300 340" role="img" aria-label="Map of Gujarat with pins at project locations" class="w-full h-auto block">
-                                    <path id="mapOutline" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" fill-rule="evenodd" d=""/>
+                                <svg id="gujaratMap" viewBox="0 0 300 340" role="img" aria-label="District map of Gujarat with pins at project locations" class="w-full h-auto block">
+                                    <g id="mapDistricts"></g>
                                     <g id="mapCities"></g>
                                     <g id="mapDots"></g>
                                 </svg>
+                                <button id="mapZoomReset" onclick="setExploreDistrict('')" class="hidden absolute top-1.5 left-1.5 px-2 py-1 min-h-[24px] rounded bg-white/95 border border-slate-300 text-[10px] font-semibold text-slate-700 hover:border-blue-400 shadow-sm">
+                                    <i class="fa-solid fa-compress mr-1"></i>Show all Gujarat
+                                </button>
                                 <div id="mapEmpty" class="hidden absolute inset-0 flex items-center justify-center bg-white/70 rounded text-xs text-slate-500 text-center p-4">No matching projects to plot.</div>
                             </div>
                             <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-slate-600">
@@ -2138,24 +2141,60 @@
                 b.addEventListener('click', () => toggleShortlist(Number(b.dataset.remove))));
         }
 
-        // ---------- Explore map (Gujarat locations) ----------
+        // ---------- Explore map (Gujarat districts + project pins) ----------
         let mapData = null;
         let mapDotEls = {};
-
-        const REF_CITIES = [
-            { name: 'Gandhinagar', lat: 23.22, lon: 72.65, dx: 5, dy: -3 },
-            { name: 'Ahmedabad', lat: 23.03, lon: 72.58, dx: -4, dy: 10 },
-            { name: 'Vadodara', lat: 22.31, lon: 73.19, dx: 5, dy: 3 },
-            { name: 'Surat', lat: 21.17, lon: 72.83, dx: 5, dy: 3 },
-            { name: 'Rajkot', lat: 22.30, lon: 70.80, dx: -6, dy: -3 },
-        ];
 
         async function loadMapData() {
             if (mapData) return mapData;
             mapData = await fetchJSON('/static/gujarat_map.json');
-            document.getElementById('mapOutline').setAttribute('d', mapData.outline);
+            renderMapDistricts();
             renderMapCities();
             return mapData;
+        }
+
+        function renderMapDistricts() {
+            const g = document.getElementById('mapDistricts');
+            const NS = 'http://www.w3.org/2000/svg';
+            g.innerHTML = '';
+            mapData.districts.forEach(d => {
+                const p = document.createElementNS(NS, 'path');
+                p.setAttribute('d', d.d);
+                p.setAttribute('fill', '#f1f5f9');
+                p.setAttribute('stroke', '#cbd5e1');
+                p.setAttribute('stroke-width', 0.7);
+                p.setAttribute('stroke-linejoin', 'round');
+                p.classList.add('cursor-pointer', 'hover:fill-slate-200', 'transition-colors');
+                p.setAttribute('tabindex', '0');
+                p.setAttribute('role', 'button');
+                p.dataset.district = d.name;
+                const title = document.createElementNS(NS, 'title');
+                title.textContent = `${d.name} district — click to zoom`;
+                p.appendChild(title);
+                const activate = () => setExploreDistrict(d.name);
+                p.addEventListener('click', activate);
+                p.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+                g.appendChild(p);
+            });
+        }
+
+        function renderMapCities() {
+            const g = document.getElementById('mapCities');
+            const NS = 'http://www.w3.org/2000/svg';
+            g.innerHTML = '';
+            (mapData.cities || []).forEach(c => {
+                const { x, y } = projLatLon(c.lat, c.lon);
+                const dot = document.createElementNS(NS, 'circle');
+                dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', 2);
+                dot.setAttribute('fill', '#64748b');
+                dot.setAttribute('pointer-events', 'none');
+                const label = document.createElementNS(NS, 'text');
+                label.setAttribute('x', x + c.dx); label.setAttribute('y', y + c.dy);
+                label.setAttribute('font-size', 7); label.setAttribute('fill', '#94a3b8');
+                label.setAttribute('pointer-events', 'none');
+                label.textContent = c.name;
+                g.appendChild(dot); g.appendChild(label);
+            });
         }
 
         function projLatLon(lat, lon) {
@@ -2165,19 +2204,34 @@
             return { x: f.x0 + fx * (f.x1 - f.x0), y: f.y0 + fy * (f.y1 - f.y0) };
         }
 
-        function renderMapCities() {
-            const g = document.getElementById('mapCities');
-            const NS = 'http://www.w3.org/2000/svg';
-            REF_CITIES.forEach(c => {
-                const { x, y } = projLatLon(c.lat, c.lon);
-                const dot = document.createElementNS(NS, 'circle');
-                dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', 2);
-                dot.setAttribute('fill', '#64748b');
-                const label = document.createElementNS(NS, 'text');
-                label.setAttribute('x', x + c.dx); label.setAttribute('y', y + c.dy);
-                label.setAttribute('font-size', 7); label.setAttribute('fill', '#94a3b8');
-                label.textContent = c.name;
-                g.appendChild(dot); g.appendChild(label);
+        function setExploreDistrict(name) {
+            const sel = document.getElementById('flDistrict');
+            sel.value = (exploreState.filters.district === name) ? '' : name;
+            onExploreFilterChange();
+        }
+
+        // Map zoom follows the district filter — one source of truth.
+        function syncMapZoom() {
+            const svg = document.getElementById('gujaratMap');
+            const name = exploreState.filters.district;
+            const resetBtn = document.getElementById('mapZoomReset');
+            const entry = name ? mapData.districts.find(d => d.name.toLowerCase() === name.toLowerCase()) : null;
+            if (entry) {
+                const [x, y, w, h] = entry.bb;
+                const pad = Math.max(w, h) * 0.08 + 2;
+                svg.setAttribute('viewBox', `${x - pad} ${y - pad} ${w + pad * 2} ${h + pad * 2}`);
+                resetBtn.classList.remove('hidden');
+            } else {
+                svg.setAttribute('viewBox', mapData.viewBox);
+                resetBtn.classList.add('hidden');
+            }
+            // highlight the active district, dim the rest while zoomed
+            document.querySelectorAll('#mapDistricts path').forEach(p => {
+                const active = name && p.dataset.district.toLowerCase() === name.toLowerCase();
+                p.setAttribute('fill', active ? '#dbeafe' : '#f1f5f9');
+                p.setAttribute('stroke', active ? '#2563eb' : '#cbd5e1');
+                p.setAttribute('stroke-width', active ? 1.1 : 0.7);
+                p.classList.toggle('opacity-25', !!name && !active);
             });
         }
 
@@ -2229,6 +2283,7 @@
                 ns.textContent = ns.textContent ? ns.textContent + ' ' + line.charAt(0).toUpperCase() + line.slice(1) + '.' : 'Not stated in the source data: ' + line + '.';
                 ns.classList.remove('hidden');
             }
+            syncMapZoom();
         }
 
         function selectMapDot(r) {
