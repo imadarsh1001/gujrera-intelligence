@@ -187,7 +187,7 @@
                                 <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider"><i class="fa-solid fa-map-location-dot mr-1.5 text-blue-600"></i>Locations</h3>
                                 <span class="text-[10px] text-slate-400">real GPS from filings</span>
                             </div>
-                            <p class="text-[10px] text-slate-400 mb-2">Click a district to zoom the map and filter the table to it; click a pin for the project. Boundaries simplified; pin positions use the coordinates recorded in the filings.</p>
+                            <p class="text-[10px] text-slate-400 mb-2" id="mapHint">Scroll to zoom · drag to pan · click a district to filter the table to it · click a pin for the project.</p>
                             <div id="mapWrap" class="relative">
                                 <div id="maplibreContainer" class="hidden w-full h-72 xl:h-80 rounded overflow-hidden border border-slate-200"></div>
                                 <svg id="gujaratMap" viewBox="0 0 300 340" role="img" aria-label="District map of Gujarat with pins at project locations" class="w-full h-auto block">
@@ -2203,31 +2203,49 @@
                 const key = getMaptilerKey();
                 if (!key) { reject(new Error('no MapTiler key configured')); return; }
                 let settled = false;
-                const fail = (why) => { if (!settled) { settled = true; clearTimeout(timer); maplibreFailed = true; reject(new Error(why)); } };
-                const timer = setTimeout(() => fail('map load timeout'), 15000);
+                let timer = null;
+                let onVis = null;
+                const finish = (fn, why) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
+                    document.removeEventListener('visibilitychange', onVis);
+                    if (fn === 'fail') { maplibreFailed = true; reject(new Error(why)); } else resolve();
+                };
+                // MapLibre renders on requestAnimationFrame; when the browser pane is
+                // hidden rAF pauses and 'load' cannot fire, so the timeout only runs
+                // while the page is visible and re-arms when it becomes visible.
+                const armTimer = () => { clearTimeout(timer); timer = setTimeout(() => finish('fail', 'map load timeout'), 15000); };
+                onVis = () => {
+                    if (!settled && document.visibilityState === 'visible') armTimer();
+                    if (!settled && document.visibilityState === 'hidden') clearTimeout(timer);
+                };
+                if (document.visibilityState === 'visible') armTimer();
+                document.addEventListener('visibilitychange', onVis);
                 document.getElementById('gujaratMap').classList.add('hidden');
                 document.getElementById('mapKeyRow').classList.add('hidden');
                 document.getElementById('maplibreContainer').classList.remove('hidden');
                 try {
                     maplibreMap = new maplibregl.Map({
                         container: 'maplibreContainer',
-                        style: 'https://api.maptiler.com/maps/basic-v2/style.json?key=' + encodeURIComponent(key),
+                        style: 'https://api.maptiler.com/maps/streets-v2/style.json?key=' + encodeURIComponent(key),
                         center: [(mapData.fit.lon0 + mapData.fit.lon1) / 2, (mapData.fit.lat0 + mapData.fit.lat1) / 2],
-                        zoom: 6,
+                        zoom: 6.2,
                         attributionControl: { compact: true },
                     });
-                } catch (e) { fail(e.message); return; }
+                    maplibreMap.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
+                    maplibreMap.addControl(new maplibregl.ScaleControl({ maxWidth: 96, unit: 'metric' }), 'bottom-left');
+                } catch (e) { finish('fail', e.message); return; }
                 maplibreMap.on('error', (e) => {
-                    const status = e && e.status;
+                    const status = (e && e.error && e.error.status) || (e && e.status);
                     if (status === 401 || status === 403) {
-                        if (!settled) fail('MapTiler rejected the key');
+                        if (!settled) finish('fail', 'MapTiler rejected the key');
                         else useFallbackMap('MapTiler rejected the key — using the offline sketch map.');
                     }
                 });
                 maplibreMap.on('load', () => {
                     if (settled) return;
-                    settled = true; clearTimeout(timer);
-                    try { addMaplibreLayers(); resolve(); } catch (e) { fail(e.message); }
+                    try { addMaplibreLayers(); finish('ok'); } catch (e) { finish('fail', e.message); }
                 });
             });
         }
@@ -2242,21 +2260,22 @@
 
         function addMaplibreLayers() {
             maplibreMap.addSource('districts', { type: 'geojson', data: { type: 'FeatureCollection', features: districtFeatures() } });
-            maplibreMap.addLayer({ id: 'district-fills', type: 'fill', source: 'districts', paint: { 'fill-color': '#f1f5f9', 'fill-opacity': 0.55 } });
-            maplibreMap.addLayer({ id: 'district-lines', type: 'line', source: 'districts', paint: { 'line-color': '#cbd5e1', 'line-width': 0.8 } });
+            maplibreMap.addLayer({ id: 'district-fills', type: 'fill', source: 'districts', paint: { 'fill-color': '#64748b', 'fill-opacity': 0.12 } });
+            maplibreMap.addLayer({ id: 'district-lines', type: 'line', source: 'districts', paint: { 'line-color': '#475569', 'line-width': 0.9, 'line-opacity': 0.7 } });
             maplibreMap.addSource('highlight', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-            maplibreMap.addLayer({ id: 'highlight-fill', type: 'fill', source: 'highlight', paint: { 'fill-color': '#dbeafe', 'fill-opacity': 0.7 } });
-            maplibreMap.addLayer({ id: 'highlight-line', type: 'line', source: 'highlight', paint: { 'line-color': '#2563eb', 'line-width': 1.4 } });
+            maplibreMap.addLayer({ id: 'highlight-fill', type: 'fill', source: 'highlight', paint: { 'fill-color': '#3b82f6', 'fill-opacity': 0.18 } });
+            maplibreMap.addLayer({ id: 'highlight-line', type: 'line', source: 'highlight', paint: { 'line-color': '#1d4ed8', 'line-width': 2 } });
             maplibreMap.addSource('projects', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
             maplibreMap.addLayer({
                 id: 'project-dots', type: 'circle', source: 'projects',
                 paint: {
-                    'circle-radius': 6,
+                    'circle-radius': 7,
                     'circle-color': ['match', ['get', 'revision_state'], 'revision_observed', '#f59e0b', 'no_revision_observed', '#10b981', '#94a3b8'],
                     'circle-stroke-color': '#ffffff',
-                    'circle-stroke-width': 1.5,
+                    'circle-stroke-width': 2,
                 },
             });
+            const pinPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10, maxWidth: '220px' });
             maplibreMap.on('click', 'district-fills', (e) => {
                 const name = e.features && e.features[0] && e.features[0].properties && e.features[0].properties.name;
                 if (name) setExploreDistrict(name);
@@ -2268,8 +2287,19 @@
                 const row = exploreRows.find(r => r.project_id === Number(pid));
                 if (row) selectMapDot(row);
             });
-            maplibreMap.on('mouseenter', 'project-dots', () => { maplibreMap.getCanvas().style.cursor = 'pointer'; });
-            maplibreMap.on('mouseleave', 'project-dots', () => { maplibreMap.getCanvas().style.cursor = ''; });
+            maplibreMap.on('mouseenter', 'project-dots', (e) => {
+                maplibreMap.getCanvas().style.cursor = 'pointer';
+                const f = e.features && e.features[0];
+                const row = f && exploreRows.find(r => r.project_id === Number(f.properties.project_id));
+                if (!row) return;
+                const rev = REVISION_LABELS[row.revision_state] || REVISION_LABELS.insufficient_history;
+                pinPopup.setLngLat(e.lngLat).setHTML(
+                    `<div style="font-size:11px"><b>${esc(row.name)}</b><br>`
+                    + `<span style="color:#64748b">${esc(row.district)} · ${rev.text}</span><br>`
+                    + `<span style="color:#2563eb">click for details</span></div>`
+                ).addTo(maplibreMap);
+            });
+            maplibreMap.on('mouseleave', 'project-dots', () => { maplibreMap.getCanvas().style.cursor = ''; pinPopup.remove(); });
         }
 
         function updateMaplibrePins(rows) {
