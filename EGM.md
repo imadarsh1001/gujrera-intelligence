@@ -45,7 +45,7 @@ Root-level files:
 
 ## Global Side Effects
 
-- **Network**: `https://gujrera.gujarat.gov.in` (pipeline collectors, both generations), Gemini/OpenAI APIs via `urllib.request` when an API key is present (`agent/copilot.py`), CDN assets fetched browser-side by the UI template (Tailwind, vis-network, Chart.js)
+- **Network**: `https://gujrera.gujarat.gov.in` (pipeline collectors, both generations), Gemini/OpenAI APIs via `urllib.request` when an API key is present (`agent/copilot.py`), and MapTiler basemap tiles fetched browser-side by the Explore map only when the user configures their own key; all other browser assets (Tailwind, Font Awesome, vis-network, Chart.js, MapLibre GL) are vendored under `real_estate_intelligence/real_estate_intelligence/ui/static/vendor/` and served locally
 - **Disk**: `gujrera_pipeline/data/runs/<run-id>/` archives (manifest.sqlite WAL + `.json.gz` + exports/reports/derived), `gujrera_pipeline/data/indexes/*.parquet` + `documents_manifest.parquet`, `real_estate_intelligence/data/intelligence.sqlite` (+ WAL/SHM; created at `config.py` import time), `graph_nodes`/`graph_edges` tables in the curated DB
 - **Sockets**: local dashboard binds `127.0.0.1:8765` (default); `scripts/verify_server.py` probes `127.0.0.1:8999`; legacy ScrapydWeb settings bind `0.0.0.0:5000` when deployed
 

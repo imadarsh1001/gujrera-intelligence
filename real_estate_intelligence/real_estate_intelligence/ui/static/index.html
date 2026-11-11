@@ -11,6 +11,10 @@
     <script type="text/javascript" src="/static/vendor/vis-network.min.js"></script>
     <!-- Chart.js 4.4.4 UMD (vendored) for Quantitative ML, Survival Curves & Longitudinal Price Analytics -->
     <script src="/static/vendor/chart.umd.min.js"></script>
+    <!-- MapLibre GL 5.24.0 UMD (vendored) for the Explore locations map; basemap tiles come
+         from MapTiler only when the user configures an API key (stored in this browser). -->
+    <link rel="stylesheet" href="/static/vendor/maplibre-gl.css">
+    <script src="/static/vendor/maplibre-gl.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
         .tab-btn.active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
@@ -185,15 +189,23 @@
                             </div>
                             <p class="text-[10px] text-slate-400 mb-2">Click a district to zoom the map and filter the table to it; click a pin for the project. Boundaries simplified; pin positions use the coordinates recorded in the filings.</p>
                             <div id="mapWrap" class="relative">
+                                <div id="maplibreContainer" class="hidden w-full h-72 xl:h-80 rounded overflow-hidden border border-slate-200"></div>
                                 <svg id="gujaratMap" viewBox="0 0 300 340" role="img" aria-label="District map of Gujarat with pins at project locations" class="w-full h-auto block">
                                     <g id="mapDistricts"></g>
                                     <g id="mapCities"></g>
                                     <g id="mapDots"></g>
                                 </svg>
-                                <button id="mapZoomReset" onclick="setExploreDistrict('')" class="hidden absolute top-1.5 left-1.5 px-2 py-1 min-h-[24px] rounded bg-white/95 border border-slate-300 text-[10px] font-semibold text-slate-700 hover:border-blue-400 shadow-sm">
+                                <button id="mapZoomReset" onclick="setExploreDistrict('')" class="hidden absolute top-1.5 left-1.5 z-10 px-2 py-1 min-h-[24px] rounded bg-white/95 border border-slate-300 text-[10px] font-semibold text-slate-700 hover:border-blue-400 shadow-sm">
                                     <i class="fa-solid fa-compress mr-1"></i>Show all Gujarat
                                 </button>
-                                <div id="mapEmpty" class="hidden absolute inset-0 flex items-center justify-center bg-white/70 rounded text-xs text-slate-500 text-center p-4">No matching projects to plot.</div>
+                                <div id="mapEmpty" class="hidden absolute inset-0 flex items-center justify-center bg-white/70 rounded text-xs text-slate-500 text-center p-4 pointer-events-none">No matching projects to plot.</div>
+                            </div>
+                            <div id="mapKeyRow" class="hidden mt-2 text-[10px] text-slate-500 space-y-1">
+                                <div class="flex gap-1.5">
+                                    <input id="maptilerKeyInput" type="password" placeholder="MapTiler API key…" aria-label="MapTiler API key" class="flex-1 min-w-0 bg-slate-50 border border-slate-300 rounded px-2 py-1 text-xs">
+                                    <button onclick="saveMaptilerKey()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2.5 py-1 rounded text-xs shrink-0">Save</button>
+                                </div>
+                                <p>Enables the interactive street basemap (MapTiler free tier). Stored in this browser only; without it the offline sketch map above is used.</p>
                             </div>
                             <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-slate-600">
                                 <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> extension applied</span>
@@ -2142,12 +2154,149 @@
         }
 
         // ---------- Explore map (Gujarat districts + project pins) ----------
+        // Two renderers over the same data: MapLibre GL with a MapTiler basemap when the
+        // user configures an API key (stored in this browser), and a fully offline SVG
+        // sketch map otherwise. The district filter drives zoom in both.
         let mapData = null;
         let mapDotEls = {};
+        let maplibreMap = null;
+        let maplibreFailed = false;
+        const MAPTILER_KEY_STORAGE = 'maptiler_api_key';
+
+        function getMaptilerKey() { return (localStorage.getItem(MAPTILER_KEY_STORAGE) || '').trim(); }
+
+        function teardownMaplibre() {
+            if (maplibreMap) { try { maplibreMap.remove(); } catch (e) { /* already gone */ } maplibreMap = null; }
+            document.getElementById('maplibreContainer').classList.add('hidden');
+            document.getElementById('gujaratMap').classList.remove('hidden');
+        }
+
+        function useFallbackMap(message) {
+            teardownMaplibre();
+            renderMapDistricts();
+            renderMapCities();
+            if (exploreLoaded) renderMapDots(filteredExploreRows());
+            if (message) {
+                const info = document.getElementById('mapInfo');
+                info.innerHTML = `<span class="text-amber-800"><i class="fa-solid fa-triangle-exclamation mr-1"></i>${esc(message)}</span>`;
+                info.classList.remove('hidden');
+            }
+        }
+
+        function saveMaptilerKey() {
+            const val = document.getElementById('maptilerKeyInput').value.trim();
+            if (val) localStorage.setItem(MAPTILER_KEY_STORAGE, val);
+            else localStorage.removeItem(MAPTILER_KEY_STORAGE);
+            document.getElementById('mapKeyRow').classList.add('hidden');
+            maplibreFailed = false;
+            if (val && typeof maplibregl !== 'undefined') {
+                initMaplibreMap()
+                    .then(() => { if (exploreLoaded) renderMapDots(filteredExploreRows()); })
+                    .catch(() => useFallbackMap('MapTiler rejected the key or tiles did not load — using the offline sketch map.'));
+            } else {
+                useFallbackMap();
+            }
+        }
+
+        function initMaplibreMap() {
+            return new Promise((resolve, reject) => {
+                const key = getMaptilerKey();
+                if (!key) { reject(new Error('no MapTiler key configured')); return; }
+                let settled = false;
+                const fail = (why) => { if (!settled) { settled = true; clearTimeout(timer); maplibreFailed = true; reject(new Error(why)); } };
+                const timer = setTimeout(() => fail('map load timeout'), 15000);
+                document.getElementById('gujaratMap').classList.add('hidden');
+                document.getElementById('mapKeyRow').classList.add('hidden');
+                document.getElementById('maplibreContainer').classList.remove('hidden');
+                try {
+                    maplibreMap = new maplibregl.Map({
+                        container: 'maplibreContainer',
+                        style: 'https://api.maptiler.com/maps/basic-v2/style.json?key=' + encodeURIComponent(key),
+                        center: [(mapData.fit.lon0 + mapData.fit.lon1) / 2, (mapData.fit.lat0 + mapData.fit.lat1) / 2],
+                        zoom: 6,
+                        attributionControl: { compact: true },
+                    });
+                } catch (e) { fail(e.message); return; }
+                maplibreMap.on('error', (e) => {
+                    const status = e && e.status;
+                    if (status === 401 || status === 403) {
+                        if (!settled) fail('MapTiler rejected the key');
+                        else useFallbackMap('MapTiler rejected the key — using the offline sketch map.');
+                    }
+                });
+                maplibreMap.on('load', () => {
+                    if (settled) return;
+                    settled = true; clearTimeout(timer);
+                    try { addMaplibreLayers(); resolve(); } catch (e) { fail(e.message); }
+                });
+            });
+        }
+
+        function districtFeatures() {
+            return mapData.districts.flatMap(d => d.rings.map(ring => ({
+                type: 'Feature',
+                properties: { name: d.name },
+                geometry: { type: 'Polygon', coordinates: [ring.concat([ring[0]])] },
+            })));
+        }
+
+        function addMaplibreLayers() {
+            maplibreMap.addSource('districts', { type: 'geojson', data: { type: 'FeatureCollection', features: districtFeatures() } });
+            maplibreMap.addLayer({ id: 'district-fills', type: 'fill', source: 'districts', paint: { 'fill-color': '#f1f5f9', 'fill-opacity': 0.55 } });
+            maplibreMap.addLayer({ id: 'district-lines', type: 'line', source: 'districts', paint: { 'line-color': '#cbd5e1', 'line-width': 0.8 } });
+            maplibreMap.addSource('highlight', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+            maplibreMap.addLayer({ id: 'highlight-fill', type: 'fill', source: 'highlight', paint: { 'fill-color': '#dbeafe', 'fill-opacity': 0.7 } });
+            maplibreMap.addLayer({ id: 'highlight-line', type: 'line', source: 'highlight', paint: { 'line-color': '#2563eb', 'line-width': 1.4 } });
+            maplibreMap.addSource('projects', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+            maplibreMap.addLayer({
+                id: 'project-dots', type: 'circle', source: 'projects',
+                paint: {
+                    'circle-radius': 6,
+                    'circle-color': ['match', ['get', 'revision_state'], 'revision_observed', '#f59e0b', 'no_revision_observed', '#10b981', '#94a3b8'],
+                    'circle-stroke-color': '#ffffff',
+                    'circle-stroke-width': 1.5,
+                },
+            });
+            maplibreMap.on('click', 'district-fills', (e) => {
+                const name = e.features && e.features[0] && e.features[0].properties && e.features[0].properties.name;
+                if (name) setExploreDistrict(name);
+            });
+            maplibreMap.on('mouseenter', 'district-fills', () => { maplibreMap.getCanvas().style.cursor = 'pointer'; });
+            maplibreMap.on('mouseleave', 'district-fills', () => { maplibreMap.getCanvas().style.cursor = ''; });
+            maplibreMap.on('click', 'project-dots', (e) => {
+                const pid = e.features && e.features[0] && e.features[0].properties && e.features[0].properties.project_id;
+                const row = exploreRows.find(r => r.project_id === Number(pid));
+                if (row) selectMapDot(row);
+            });
+            maplibreMap.on('mouseenter', 'project-dots', () => { maplibreMap.getCanvas().style.cursor = 'pointer'; });
+            maplibreMap.on('mouseleave', 'project-dots', () => { maplibreMap.getCanvas().style.cursor = ''; });
+        }
+
+        function updateMaplibrePins(rows) {
+            if (!maplibreMap || !maplibreMap.getSource('projects')) return;
+            maplibreMap.getSource('projects').setData({
+                type: 'FeatureCollection',
+                features: rows
+                    .filter(r => r.latitude !== null && r.latitude !== undefined && r.longitude !== null && r.longitude !== undefined)
+                    .map(r => ({
+                        type: 'Feature',
+                        properties: { project_id: r.project_id, revision_state: r.revision_state },
+                        geometry: { type: 'Point', coordinates: [r.longitude, r.latitude] },
+                    })),
+            });
+        }
 
         async function loadMapData() {
             if (mapData) return mapData;
             mapData = await fetchJSON('/static/gujarat_map.json');
+            if (getMaptilerKey() && typeof maplibregl !== 'undefined' && !maplibreFailed) {
+                try {
+                    await initMaplibreMap();
+                    return mapData;
+                } catch (e) { useFallbackMap(); }
+            } else if (typeof maplibregl !== 'undefined' && !maplibreFailed && !getMaptilerKey()) {
+                document.getElementById('mapKeyRow').classList.remove('hidden');
+            }
             renderMapDistricts();
             renderMapCities();
             return mapData;
@@ -2210,12 +2359,27 @@
             onExploreFilterChange();
         }
 
-        // Map zoom follows the district filter — one source of truth.
+        // Map zoom follows the district filter — one source of truth, both renderers.
         function syncMapZoom() {
-            const svg = document.getElementById('gujaratMap');
+            if (!mapData) return;
             const name = exploreState.filters.district;
             const resetBtn = document.getElementById('mapZoomReset');
             const entry = name ? mapData.districts.find(d => d.name.toLowerCase() === name.toLowerCase()) : null;
+            if (maplibreMap && maplibreMap.getSource('districts')) {
+                if (entry) {
+                    maplibreMap.fitBounds([[entry.gbb[0], entry.gbb[1]], [entry.gbb[2], entry.gbb[3]]], { padding: 24, maxZoom: 11, duration: 350 });
+                    maplibreMap.getSource('highlight').setData({
+                        type: 'FeatureCollection',
+                        features: entry.rings.map(ring => ({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring.concat([ring[0]])] } })),
+                    });
+                } else {
+                    maplibreMap.fitBounds([[mapData.fit.lon0, mapData.fit.lat0], [mapData.fit.lon1, mapData.fit.lat1]], { padding: 16, duration: 350 });
+                    maplibreMap.getSource('highlight').setData({ type: 'FeatureCollection', features: [] });
+                }
+                resetBtn.classList.toggle('hidden', !entry);
+                return;
+            }
+            const svg = document.getElementById('gujaratMap');
             if (entry) {
                 const [x, y, w, h] = entry.bb;
                 const pad = Math.max(w, h) * 0.08 + 2;
@@ -2225,7 +2389,6 @@
                 svg.setAttribute('viewBox', mapData.viewBox);
                 resetBtn.classList.add('hidden');
             }
-            // highlight the active district, dim the rest while zoomed
             document.querySelectorAll('#mapDistricts path').forEach(p => {
                 const active = name && p.dataset.district.toLowerCase() === name.toLowerCase();
                 p.setAttribute('fill', active ? '#dbeafe' : '#f1f5f9');
@@ -2237,13 +2400,26 @@
 
         function renderMapDots(rows) {
             if (!mapData) return;
+            const missingGps = rows.filter(r => r.latitude === null || r.latitude === undefined || r.longitude === null || r.longitude === undefined).length;
+            if (missingGps) {
+                const line = `${missingGps} of ${rows.length} matches have no recorded GPS coordinates and are not plotted`;
+                const ns = document.getElementById('exploreNotStated');
+                ns.textContent = ns.textContent ? ns.textContent + ' ' + line.charAt(0).toUpperCase() + line.slice(1) + '.' : 'Not stated in the source data: ' + line + '.';
+                ns.classList.remove('hidden');
+            }
+            if (maplibreMap && maplibreMap.getSource('projects')) {
+                updateMaplibrePins(rows);
+                document.getElementById('mapEmpty').classList.toggle('hidden', rows.some(r => r.latitude !== null && r.latitude !== undefined && r.longitude !== null && r.longitude !== undefined));
+                syncMapZoom();
+                return;
+            }
             const g = document.getElementById('mapDots');
             const NS = 'http://www.w3.org/2000/svg';
             g.innerHTML = '';
             mapDotEls = {};
-            let plotted = 0, missingGps = 0;
+            let plotted = 0;
             rows.forEach(r => {
-                if (r.latitude === null || r.latitude === undefined || r.longitude === null || r.longitude === undefined) { missingGps++; return; }
+                if (r.latitude === null || r.latitude === undefined || r.longitude === null || r.longitude === undefined) { return; }
                 const { x, y } = projLatLon(r.latitude, r.longitude);
                 const rev = REVISION_LABELS[r.revision_state] || REVISION_LABELS.insufficient_history;
                 const color = r.revision_state === 'revision_observed' ? '#f59e0b'
@@ -2277,12 +2453,6 @@
                 plotted++;
             });
             document.getElementById('mapEmpty').classList.toggle('hidden', plotted > 0);
-            const ns = document.getElementById('exploreNotStated');
-            if (missingGps) {
-                const line = `${missingGps} of ${rows.length} matches have no recorded GPS coordinates and are not plotted`;
-                ns.textContent = ns.textContent ? ns.textContent + ' ' + line.charAt(0).toUpperCase() + line.slice(1) + '.' : 'Not stated in the source data: ' + line + '.';
-                ns.classList.remove('hidden');
-            }
             syncMapZoom();
         }
 
