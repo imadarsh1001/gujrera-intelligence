@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scenario 2 Walkthrough Mock — Demo Data (not a live dashboard)</title>
+<!--
+  STATIC ACCEPTANCE MOCK — acceptance scenario 2 of docs/reviews/ui-discovery/concepts_brief.md.
+  Every project, price, and architect below is INVENTED for interaction design validation only.
+  This file is never served by the dashboard server and shares no IDs with live data.
+  The live dashboard shows "insufficient comparable data" until real locality data lands.
+-->
+<style>
+  body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; margin: 0; background: #f8fafc; color: #0f172a; }
+  .demo-banner { background: repeating-linear-gradient(45deg, #fbbf24, #fbbf24 14px, #f59e0b 14px, #f59e0b 28px); color: #451a03; font-weight: 700; text-align: center; padding: 6px; font-size: 12px; letter-spacing: .04em; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  h1 { font-size: 18px; margin: 8px 0 2px; } h2 { font-size: 14px; margin: 0 0 10px; color: #334155; text-transform: uppercase; letter-spacing: .05em; }
+  p.note { font-size: 11px; color: #64748b; margin: 6px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { border: 1px solid #e2e8f0; padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; color: #475569; text-transform: uppercase; font-size: 10px; }
+  td.metric { background: #f8fafc; font-weight: 600; color: #475569; width: 200px; }
+  .good { color: #047857; font-weight: 700; } .bad { color: #b45309; font-weight: 700; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+  .b-amber { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
+  .b-green { background: #d1fae5; color: #065f46; border: 1px solid #34d399; }
+  .chip { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 999px; padding: 2px 10px; font-size: 11px; margin: 2px 4px 2px 0; }
+  .src { font-size: 10px; color: #64748b; }
+</style>
+</head>
+<body>
+<div class="demo-banner">⚠ DEMO DATA — static acceptance mock for review walkthrough only. All projects, prices, architects, and cases below are invented. Never mixed into live data.</div>
+<div class="wrap">
+  <h1>Scenario 2: Value, architect, and promoter history — South Bopal &amp; Shela, 3 BHK</h1>
+  <p class="note">Walkthrough of the benchmark / architect / related-case interaction design that gates on locality data. Live data shows "insufficient comparable data" for every step below until Ahmedabad-city locality coverage lands.</p>
+
+  <div class="card">
+    <h2>Active Explore filters (fixture-backed)</h2>
+    <span class="chip">locality: South Bopal</span><span class="chip">locality: Shela</span><span class="chip">unit type: Residential (3 BHK)</span><span class="chip">carpet 1,050–1,350 sq ft</span>
+    <p class="note">6 of 6 demo projects match · comparison group for the benchmark: locality + project type + unit type, ≥3 projects, ≥5 BOOKED transactions each, 24-month window — <b>group shown: South Bopal, 4 projects, 61 BOOKED agreements, 2024-11 → 2026-10</b>.</p>
+  </div>
+
+  <div class="card">
+    <h2>Local price benchmark (demo: South Bopal group — median Rs. 7,950/sq ft, n = 61, window 2024-11 → 2026-10)</h2>
+    <table>
+      <thead><tr><th>Project</th><th>Lowest ₹/sq ft (BOOKED)</th><th>vs own-locality median</th><th>Price basis</th><th>Stage</th></tr></thead>
+      <tbody>
+        <tr><td><b>DEMO Rivera Greens</b> (South Bopal)</td><td>Rs. 7,120</td><td class="good">14% below median</td><td class="src">registered agreement 2026-04-12 · Form 3 booking record</td><td>72%</td></tr>
+        <tr><td><b>DEMO Shela Skyline</b> (Shela)</td><td>Rs. 6,980</td><td>Shela group: n = 2 — <span class="bad">insufficient comparable data</span></td><td class="src">registered agreement 2026-08-02</td><td>41%</td></tr>
+        <tr><td><b>DEMO Bopal Crown</b> (South Bopal)</td><td>Rs. 8,740</td><td class="bad">10% above median</td><td class="src">registered agreement 2026-09-18</td><td>88%</td></tr>
+        <tr><td><b>DEMO Rivera Phase 2</b> (South Bopal)</td><td>Rs. 7,760</td><td>within ±10% of median</td><td class="src">registered agreement 2025-12-05 (older window — dates differ, compare with care)</td><td>63%</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Gate rule: ≥3 projects × ≥5 BOOKED agreements in 24 months, stratified by unit type. "Lower-priced" ≠ "better value" — value-for-money checklist (budget fit, configuration, stage risk, freshness) ships with this stage, not release 1.</p>
+  </div>
+
+  <div class="card">
+    <h2>Architect narrowing (name match only — no license numbers in this demo group)</h2>
+    <span class="chip">architect: DEMO Ar. Meera Desai (name match only)</span>
+    <p class="note">2 of 4 demo projects list this architect on their Form 1 filing. Attribution source: professionals table of the Form 1/architect certificate; no CoA number captured, so two professionals sharing a name would merge into one chip.</p>
+  </div>
+
+  <div class="card">
+    <h2>Related cases for shortlisted demo projects (tiered, labeled)</h2>
+    <table>
+      <thead><tr><th>Project</th><th>Named party (role)</th><th>Linked project</th><th>Record</th><th>Status</th><th>Dates</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td>DEMO Rivera Greens</td><td>— (the project)</td><td>—</td><td><span class="badge b-amber">Complaint</span> allottee delay allegation</td><td>status not disclosed</td><td>filed 2026-06-11</td><td class="src">applications (all_applications endpoint)</td></tr>
+        <tr><td>DEMO Bopal Crown</td><td>DEMO Bopal Crown LLP (promoter)</td><td>DEMO Rivera Phase 2</td><td><span class="badge b-amber">Extension</span> completion-date extension application</td><td>actioned 2025-09-03, status not disclosed</td><td>applied 2025-06-30 → actioned 2025-09-03</td><td class="src">applications (approvalDate/finalStatus fields)</td></tr>
+        <tr><td>DEMO Rivera Phase 2</td><td>DEMO Ar. Meera Desai (architect)</td><td>DEMO Rivera Greens</td><td><span class="badge b-green">Verified link</span> shared professional (name-equality; no soft links exist in this database)</td><td>—</td><td>—</td><td class="src">professionals via DESIGNED_BY graph edge</td></tr>
+      </tbody>
+    </table>
+    <p class="note">A complaint is an allegation that may be dismissed; no order records exist in this database. Searches that return nothing report which sources were searched and their coverage. "Extension applied" ≠ "delay admitted" — approval status is not disclosed by the portal.</p>
+  </div>
+
+  <div class="card">
+    <h2>Ask Across Projects (scope shown above every answer)</h2>
+    <p style="font-size:12px"><b>Scope: shortlist (2 projects)</b> · <i>"Which of these revised their completion dates?"</i></p>
+    <p style="font-size:12px">→ DEMO Bopal Crown: extension application filed 2025-06-30, actioned 2025-09-03, approval status not disclosed (source: applications table, form all_applications). DEMO Rivera Greens: no move on record (2 filings, no extension). Evidence rows are the same records the table above shows; "reopen these results in Explore" restores the filter state.</p>
+  </div>
+</div>
+</body>
+</html>
