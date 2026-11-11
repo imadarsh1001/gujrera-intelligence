@@ -341,7 +341,8 @@ class TestUIServerEndpoints(unittest.TestCase):
         self.assertIsInstance(rows, list)
         self.assertGreaterEqual(len(rows), 1)
         required = {"project_id", "name", "registration_number", "district", "taluka", "project_type",
-                    "promoter_name", "completion_date", "progress_pct", "complaints_count", "extensions_count",
+                    "promoter_name", "completion_date", "progress_pct", "latitude", "longitude",
+                    "complaints_count", "extensions_count",
                     "filings_count", "latest_filing_date", "days_since_latest_filing", "revision_state",
                     "revision_evidence_dates", "unit_types", "min_price_booked", "min_rate_sqft_booked",
                     "price_date_min", "price_date_max", "booked_by_unit_type", "architects"}

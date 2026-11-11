@@ -120,6 +120,7 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
                 ".woff2": "font/woff2",
                 ".svg": "image/svg+xml",
                 ".png": "image/png",
+                ".json": "application/json; charset=utf-8",
             }.get(Path(rel).suffix, "application/octet-stream")
             self.send_response(200)
             self.send_header("Content-Type", content_type)
@@ -398,6 +399,8 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
                 "promoter_name": p["promoter_name"],
                 "completion_date": p["completion_date"],
                 "progress_pct": p["latest_form_one_progress_pct"],
+                "latitude": p["latitude"],
+                "longitude": p["longitude"],
                 "complaints_count": p["complaints_count"] or 0,
                 "extensions_count": p["extensions_count"] or 0,
                 "filings_count": len(filing_dates),
