@@ -1,15 +1,15 @@
 """Lightweight zero-dependency web server and interactive dashboard for investors."""
 
+import http.client
 import json
 import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlencode, urlparse
-import urllib.error
-import urllib.request
 
 from ..analytics.audit import ProjectAuditor
 from ..analytics.claims_checker import SalesClaimVerifier
@@ -73,6 +73,36 @@ def _revision_state(filings_count: int, extension_rows_count: int) -> str:
 
 
 MAPTILER_UPSTREAM = "https://api.maptiler.com/"
+_MAPTILER_HOST = "api.maptiler.com"
+_TLS = threading.local()
+_PROXY_CACHE: Dict[str, Any] = {}
+_PROXY_CACHE_ORDER: List[str] = []
+_PROXY_CACHE_LOCK = threading.Lock()
+_PROXY_CACHE_MAX = 300
+
+
+def _maptiler_connection() -> http.client.HTTPSConnection:
+    """Per-thread keep-alive connection: a proxied style load fans out into several
+    upstream requests, and a fresh TLS handshake per request makes it crawl."""
+    conn = getattr(_TLS, "maptiler_conn", None)
+    if conn is None:
+        conn = http.client.HTTPSConnection(_MAPTILER_HOST, timeout=20)
+        _TLS.maptiler_conn = conn
+    return conn
+
+
+def _proxy_cache_get(cache_key):
+    with _PROXY_CACHE_LOCK:
+        return _PROXY_CACHE.get(cache_key)
+
+
+def _proxy_cache_put(cache_key, value):
+    with _PROXY_CACHE_LOCK:
+        if cache_key not in _PROXY_CACHE:
+            _PROXY_CACHE_ORDER.append(cache_key)
+            while len(_PROXY_CACHE_ORDER) > _PROXY_CACHE_MAX:
+                _PROXY_CACHE.pop(_PROXY_CACHE_ORDER.pop(0), None)
+        _PROXY_CACHE[cache_key] = value
 
 
 def _maptiler_key() -> Optional[str]:
@@ -117,6 +147,8 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            # always revalidate: the template and its JS evolve together with the API
+            self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             self.wfile.write(body)
             return
@@ -140,6 +172,8 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            # vendored libraries and map data change only with deployments
+            self.send_header("Cache-Control", "public, max-age=604800")
             self.end_headers()
             self.wfile.write(body)
             return
@@ -199,6 +233,14 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             ]
             contagion = self.graph_engine.trace_contagion_risk(pid)
 
+            ext_rows = self.con.execute(
+                "SELECT apply_date FROM applications WHERE project_id = ? AND application_type = 'Extension'",
+                (pid,),
+            ).fetchall()
+            filings_count = self.con.execute(
+                "SELECT COUNT(*) FROM finances WHERE project_id = ? AND filing_date IS NOT NULL", (pid,)
+            ).fetchone()[0]
+
             self._send_json({
                 "project": dict(prow),
                 "blocks": blocks,
@@ -211,6 +253,11 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
                 "bu_records": bu_records,
                 "leads": leads,
                 "contagion": contagion,
+                "filings_count": filings_count,
+                "revision_state": _revision_state(filings_count, len(ext_rows)),
+                "revision_evidence_dates": sorted(
+                    dt.date().isoformat() for dt in (_parse_timestamp(r["apply_date"]) for r in ext_rows) if dt
+                ),
             })
             return
 
@@ -356,9 +403,9 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
     def _proxy_maptiler(self, subpath: str, query: str) -> None:
         """Stream a MapTiler resource with the server-side key attached.
 
-        style.json responses have their embedded upstream URLs rewritten to the proxy
-        so tiles, glyphs, and sprites also flow through here — the browser never sees
-        the key. Requires MAPTILER_API_KEY in the environment (or workspace .env).
+        style.json and TileJSON responses have their embedded upstream URLs rewritten
+        to the proxy so tiles, glyphs, and sprites also flow through here — the browser
+        never sees the key. Requires MAPTILER_API_KEY in the environment (.env works).
         """
         key = _maptiler_key()
         if not key:
@@ -373,18 +420,31 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
                 if k != "key":
                     params.append((k, v))
         params.append(("key", key))
-        url = MAPTILER_UPSTREAM + subpath + "?" + urlencode(params)
-        req = urllib.request.Request(url, headers={"User-Agent": "gujrera-intelligence-ui"})
-        try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
+        cache_key = subpath + "?" + urlencode(params)
+        cacheable = "/tiles/v3/" not in subpath or subpath.endswith("tiles.json")  # vector tiles stay uncached
+        if cacheable:
+            hit = _proxy_cache_get(cache_key)
+            if hit is not None:
+                self._send_proxied(subpath, hit[0], hit[1])
+                return
+        url_query = urlencode(params)
+        body = ctype = None
+        for attempt in (1, 2):  # retry once: pooled connections can go stale between requests
+            conn = _maptiler_connection()
+            try:
+                conn.request("GET", "/" + subpath + "?" + url_query, headers={"User-Agent": "gujrera-intelligence-ui"})
+                resp = conn.getresponse()
                 body = resp.read()
-                ctype = resp.headers.get("Content-Type", "application/octet-stream")
-        except urllib.error.HTTPError as e:
-            self.send_error(e.code, "Upstream map resource error")
-            return
-        except Exception:
-            self.send_error(502, "Upstream map resource unreachable")
-            return
+                ctype = resp.getheader("Content-Type", "application/octet-stream")
+                if resp.status != 200:
+                    self.send_error(resp.status, "Upstream map resource error")
+                    return
+                break
+            except (http.client.HTTPException, OSError):
+                _TLS.maptiler_conn = None
+                if attempt == 2:
+                    self.send_error(502, "Upstream map resource unreachable")
+                    return
         if "json" in ctype:
             # Rewrite EVERY JSON body (style.json, TileJSON, …): point embedded upstream
             # URLs at this server and strip embedded keys, so neither the secret nor a
@@ -398,6 +458,11 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             origin = f"{proto}://{host}"
             body = body.replace(MAPTILER_UPSTREAM.encode("utf-8"), (origin + "/api/maptiler/").encode("utf-8"))
             body = _re.sub(rb"[?&]key=[^&\"']+", b"", body)
+        if cacheable and len(body) < 2_000_000:
+            _proxy_cache_put(cache_key, (ctype, body))
+        self._send_proxied(subpath, ctype, body)
+
+    def _send_proxied(self, subpath: str, ctype: str, body: bytes) -> None:
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))

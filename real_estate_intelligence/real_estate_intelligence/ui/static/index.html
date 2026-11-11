@@ -173,7 +173,7 @@
                                 <th class="p-2 cursor-pointer hover:text-blue-700 text-right" data-sort="min_price_booked" title="Sort by lowest registered agreement price (BOOKED units only)">Lowest price</th>
                                 <th class="p-2 cursor-pointer hover:text-blue-700 text-right" data-sort="min_rate_sqft_booked" title="Sort by lowest registered rate per sq ft (BOOKED units only)">Lowest ₹/sq ft</th>
                                 <th class="p-2 cursor-pointer hover:text-blue-700 text-right" data-sort="days_since_latest_filing" title="Sort by filing freshness">Latest filing</th>
-                                <th class="p-2 cursor-pointer hover:text-blue-700" data-sort="revision_state" title="Sort by completion-date revision status">Revision</th>
+                                <th class="p-2 cursor-pointer hover:text-blue-700" data-sort="revision_state" title="Sort by completion-date revision status (hover a dot for details)">Rev.</th>
                             </tr>
                         </thead>
                         <tbody id="exploreBody" class="divide-y divide-slate-100"></tbody>
@@ -181,7 +181,7 @@
                         </div>
                         <p class="text-[10px] text-slate-400 mt-2">Price columns cover <b>registered agreements (BOOKED units) only</b>; declared prices of unsold inventory are excluded. Lowest price / ₹ per sq ft are computed over the units matching the selected unit type. Click a project name for the full dossier. Pin coordinates come from the filings; district boundaries simplified (<span class="font-mono">udit-001/india-maps-data</span>).</p>
                     </div>
-                    <aside id="mapPanel" class="order-1 xl:order-2 self-start xl:sticky xl:top-20" aria-label="Project locations on a map of Gujarat">
+                    <aside id="mapPanel" class="order-1 xl:order-2 self-start xl:sticky xl:top-20 xl:col-span-2" aria-label="Project locations on a map of Gujarat">
                         <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
                             <div class="flex items-center justify-between gap-2 mb-2">
                                 <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider"><i class="fa-solid fa-map-location-dot mr-1.5 text-blue-600"></i>Locations</h3>
@@ -191,7 +191,7 @@
                             </div>
                             <div id="mapWrap" class="relative">
                                 <div id="maplibreContainer" class="hidden w-full h-[380px] xl:h-[560px] rounded-lg overflow-hidden border border-slate-200"></div>
-                                <svg id="gujaratMap" viewBox="0 0 300 340" role="img" aria-label="District map of Gujarat with pins at project locations" class="w-full h-[380px] xl:h-[560px] block bg-slate-50 rounded-lg border border-slate-200">
+                                <svg id="gujaratMap" viewBox="0 0 300 340" role="img" aria-label="District map of Gujarat with pins at project locations" class="w-full h-auto block bg-white rounded-lg">
                                     <g id="mapDistricts"></g>
                                     <g id="mapCities"></g>
                                     <g id="mapDots"></g>
@@ -207,12 +207,6 @@
                                     <button onclick="saveMaptilerKey()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2.5 py-1 rounded text-xs shrink-0">Save</button>
                                 </div>
                                 <p>Enables the interactive street basemap. Stored in this browser only — or set <code class="font-mono">MAPTILER_API_KEY</code> in the workspace <code class="font-mono">.env</code> and it is used server-side, never sent to browsers.</p>
-                            </div>
-                            <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-slate-600">
-                                <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> extension applied</span>
-                                <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> no move on record</span>
-                                <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-slate-400 inline-block"></span> not enough history</span>
-                                <span class="inline-flex items-center gap-1 ml-auto text-slate-400"><span class="w-1.5 h-1.5 rounded-full bg-slate-500 inline-block"></span> reference city</span>
                             </div>
                             <div id="mapInfo" class="hidden mt-2 p-2 rounded-lg bg-blue-50 border border-blue-200 text-xs"></div>
                         </div>
@@ -378,6 +372,9 @@
                             <span class="text-[11px] font-semibold text-slate-600 block mb-1">Form 5 CA Annual Audits:</span>
                             <div id="q4Form5Pills" class="flex flex-wrap gap-1.5"></div>
                         </div>
+
+                        <!-- Completion-date revision status (full detail; Explore shows only a dot) -->
+                        <div id="q4Revision" class="pt-2 border-t border-slate-100"></div>
 
                         <div id="q4Professionals" class="space-y-1 pt-2 border-t border-slate-100"></div>
                         <div id="q4SisterProjects" class="pt-2 border-t border-slate-100"></div>
@@ -913,10 +910,10 @@
             try {
                 const mapCfg = await fetchJSON('/api/map/config').catch(() => ({ maptiler_proxy: false }));
                 mapProxy = !!(mapCfg && mapCfg.maptiler_proxy);
-                const [rows] = await Promise.all([
-                    fetchJSON('/api/explore'),
-                    loadMapData().catch(() => { document.getElementById('mapPanel').classList.add('hidden'); return null; }),
-                ]);
+            } catch (e) { mapProxy = false; }
+            // The table must never wait on the map: rows render as soon as they land,
+            // and the map (slower to initialize) fills in its pins when ready.
+            fetchJSON('/api/explore').then(rows => {
                 exploreRows = rows;
                 if (!Array.isArray(exploreRows)) throw new Error('unexpected response');
                 // populate the district filter with project counts
@@ -935,9 +932,15 @@
                 exploreLoaded = true;
                 hideGlobalError();
                 renderExplore();
-            } catch (err) {
+            }).catch(err => {
                 showGlobalError('Could not load the Explore table: ' + err.message);
-            }
+            });
+            // Map initializes in the background; its pins fill in once rows are present.
+            loadMapData().then(() => {
+                if (exploreLoaded) renderMapDots(filteredExploreRows());
+            }).catch(() => {
+                document.getElementById('mapPanel').classList.add('hidden');
+            });
         }
 
         function renderMatchStrip(pid) {
@@ -1108,6 +1111,15 @@
                 pill.textContent = `${f5.financial_year}: ${f5.status}`;
                 f5Div.appendChild(pill);
             });
+
+            // Completion-date revision status (detail-level view; Explore shows only a dot)
+            const revDiv = document.getElementById('q4Revision');
+            const revState = REVISION_LABELS[data.revision_state] || REVISION_LABELS.insufficient_history;
+            const revDates = data.revision_evidence_dates || [];
+            revDiv.innerHTML = '<span class="font-semibold text-slate-700">Completion-date status: </span>'
+                + `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${revState.cls}">${revState.text}</span>`
+                + (revDates.length ? ` <span class="text-[10px] text-slate-400">extension applied ${esc(revDates.join(', '))}</span>` : '')
+                + '<div class="text-[10px] text-slate-400 mt-1">Under review: how this status should treat a project completing early, or future changes to the declared date.</div>';
 
             // Professionals & Contagion
             const profDiv = document.getElementById('q4Professionals');
@@ -2022,7 +2034,6 @@
             const short = getShortlistIds();
             matches.forEach(r => {
                 const bucket = exploreBucket(r);
-                const rev = REVISION_LABELS[r.revision_state] || REVISION_LABELS.insufficient_history;
                 const tr = document.createElement('tr');
                 tr.className = 'hover:bg-blue-50/40';
                 tr.innerHTML = `
@@ -2041,7 +2052,7 @@
                     <td class="p-2 text-right kpi-value">${bucket && bucket.min_price !== null && bucket.min_price !== undefined ? formatINR(bucket.min_price) : '<span class="text-slate-400">not stated</span>'}</td>
                     <td class="p-2 text-right kpi-value font-bold text-blue-700">${bucket && bucket.min_rate_sqft !== null && bucket.min_rate_sqft !== undefined ? 'Rs. ' + Math.round(bucket.min_rate_sqft).toLocaleString() : '<span class="text-slate-400">not stated</span>'}</td>
                     <td class="p-2 text-right kpi-value" title="${esc(freshnessTitle(r))}">${r.days_since_latest_filing !== null && r.days_since_latest_filing !== undefined ? r.days_since_latest_filing + ' d' : '<span class="text-slate-400">no filing</span>'}</td>
-                    <td class="p-2"><span title="${esc(revisionTitle(r))}" class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${rev.cls}">${rev.text}</span></td>
+                    <td class="p-2 text-center"><span title="${esc(revisionTitle(r))}" class="inline-block w-3 h-3 rounded-full align-middle" style="background:${r.revision_state === 'revision_observed' ? '#f59e0b' : r.revision_state === 'no_revision_observed' ? '#10b981' : '#94a3b8'}"></span></td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -2228,7 +2239,7 @@
                 // MapLibre renders on requestAnimationFrame; when the browser pane is
                 // hidden rAF pauses and 'load' cannot fire, so the timeout only runs
                 // while the page is visible and re-arms when it becomes visible.
-                const armTimer = () => { clearTimeout(timer); timer = setTimeout(() => finish('fail', 'map load timeout'), 15000); };
+                const armTimer = () => { clearTimeout(timer); timer = setTimeout(() => finish('fail', 'map load timeout'), 30000); };
                 onVis = () => {
                     if (!settled && document.visibilityState === 'visible') armTimer();
                     if (!settled && document.visibilityState === 'hidden') clearTimeout(timer);

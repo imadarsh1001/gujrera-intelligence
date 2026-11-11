@@ -303,6 +303,10 @@ class TestUIServerEndpoints(unittest.TestCase):
         data = json.loads(body.decode("utf-8"))
         prior_ids = [p["linked_project_id"] for p in data.get("prior_projects", [])]
         self.assertNotIn(16562, prior_ids)
+        # revision summary fields ride along for the Project Detail section
+        self.assertIn(data["revision_state"], {"revision_observed", "no_revision_observed", "insufficient_history"})
+        self.assertIsInstance(data["revision_evidence_dates"], list)
+        self.assertGreaterEqual(data["filings_count"], 1)
 
     def test_search_invalid_project_id_returns_400(self):
         code, _ = self._make_get_request("/api/search?query=encumbrance&project_id=abc")
