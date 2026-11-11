@@ -159,8 +159,8 @@
                 </div>
                 <p id="exploreCounts" aria-live="polite" class="text-xs text-slate-600 my-2">Loading…</p>
                 <p id="exploreNotStated" class="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 mb-3 hidden"></p>
-                <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
-                    <div class="xl:col-span-2 order-2 xl:order-1 min-w-0">
+                <div class="grid grid-cols-1 xl:grid-cols-5 gap-5">
+                    <div class="xl:col-span-3 order-2 xl:order-1 min-w-0">
                         <div class="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
                             <table class="w-full text-left text-xs" aria-label="Explore results">
                         <thead class="bg-slate-100 text-slate-600 uppercase">
@@ -179,18 +179,19 @@
                         <tbody id="exploreBody" class="divide-y divide-slate-100"></tbody>
                     </table>
                         </div>
-                        <p class="text-[10px] text-slate-400 mt-2">Price columns cover <b>registered agreements (BOOKED units) only</b>; declared prices of unsold inventory are excluded. Lowest price / ₹ per sq ft are computed over the units matching the selected unit type. Click a project name for the full dossier. Computation date is printed with the filing summary.</p>
+                        <p class="text-[10px] text-slate-400 mt-2">Price columns cover <b>registered agreements (BOOKED units) only</b>; declared prices of unsold inventory are excluded. Lowest price / ₹ per sq ft are computed over the units matching the selected unit type. Click a project name for the full dossier. Pin coordinates come from the filings; district boundaries simplified (<span class="font-mono">udit-001/india-maps-data</span>).</p>
                     </div>
                     <aside id="mapPanel" class="order-1 xl:order-2 self-start xl:sticky xl:top-20" aria-label="Project locations on a map of Gujarat">
-                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                            <div class="flex items-center justify-between mb-1">
+                        <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
+                            <div class="flex items-center justify-between gap-2 mb-2">
                                 <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider"><i class="fa-solid fa-map-location-dot mr-1.5 text-blue-600"></i>Locations</h3>
-                                <span class="text-[10px] text-slate-400">real GPS from filings</span>
+                                <button id="mapDistrictChip" onclick="setExploreDistrict('')" class="hidden items-center gap-1.5 px-2 py-1 min-h-[24px] rounded-full bg-blue-50 border border-blue-200 text-[10px] font-semibold text-blue-800">
+                                    <span id="mapDistrictChipText"></span><i class="fa-solid fa-xmark"></i>
+                                </button>
                             </div>
-                            <p class="text-[10px] text-slate-400 mb-2" id="mapHint">Scroll to zoom · drag to pan · click a district to filter the table to it · click a pin for the project.</p>
                             <div id="mapWrap" class="relative">
-                                <div id="maplibreContainer" class="hidden w-full h-72 xl:h-80 rounded overflow-hidden border border-slate-200"></div>
-                                <svg id="gujaratMap" viewBox="0 0 300 340" role="img" aria-label="District map of Gujarat with pins at project locations" class="w-full h-auto block">
+                                <div id="maplibreContainer" class="hidden w-full h-[380px] xl:h-[560px] rounded-lg overflow-hidden border border-slate-200"></div>
+                                <svg id="gujaratMap" viewBox="0 0 300 340" role="img" aria-label="District map of Gujarat with pins at project locations" class="w-full h-[380px] xl:h-[560px] block bg-slate-50 rounded-lg border border-slate-200">
                                     <g id="mapDistricts"></g>
                                     <g id="mapCities"></g>
                                     <g id="mapDots"></g>
@@ -205,7 +206,7 @@
                                     <input id="maptilerKeyInput" type="password" placeholder="MapTiler API key…" aria-label="MapTiler API key" class="flex-1 min-w-0 bg-slate-50 border border-slate-300 rounded px-2 py-1 text-xs">
                                     <button onclick="saveMaptilerKey()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2.5 py-1 rounded text-xs shrink-0">Save</button>
                                 </div>
-                                <p>Enables the interactive street basemap (MapTiler free tier). Stored in this browser only; without it the offline sketch map above is used.</p>
+                                <p>Enables the interactive street basemap. Stored in this browser only — or set <code class="font-mono">MAPTILER_API_KEY</code> in the workspace <code class="font-mono">.env</code> and it is used server-side, never sent to browsers.</p>
                             </div>
                             <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-slate-600">
                                 <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> extension applied</span>
@@ -910,17 +911,21 @@
 
         async function loadExplore() {
             try {
+                const mapCfg = await fetchJSON('/api/map/config').catch(() => ({ maptiler_proxy: false }));
+                mapProxy = !!(mapCfg && mapCfg.maptiler_proxy);
                 const [rows] = await Promise.all([
                     fetchJSON('/api/explore'),
                     loadMapData().catch(() => { document.getElementById('mapPanel').classList.add('hidden'); return null; }),
                 ]);
                 exploreRows = rows;
                 if (!Array.isArray(exploreRows)) throw new Error('unexpected response');
-                // populate the district filter from the data
+                // populate the district filter with project counts
                 const sel = document.getElementById('flDistrict');
                 const current = exploreState.filters.district;
-                const districts = [...new Set(exploreRows.map(r => r.district).filter(Boolean))].sort();
-                sel.innerHTML = '<option value="">All</option>' + districts.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+                const districtCounts = {};
+                exploreRows.forEach(r => { if (r.district) districtCounts[r.district] = (districtCounts[r.district] || 0) + 1; });
+                const districts = Object.keys(districtCounts).sort();
+                sel.innerHTML = '<option value="">All districts</option>' + districts.map(d => `<option value="${esc(d)}">${esc(d)} (${districtCounts[d]})</option>`).join('');
                 sel.value = current;
                 const usel = document.getElementById('flUnitType');
                 const ucurrent = exploreState.filters.unitType;
@@ -2161,9 +2166,17 @@
         let mapDotEls = {};
         let maplibreMap = null;
         let maplibreFailed = false;
+        let mapProxy = false; // server-side .env key: style/tiles proxied, key never reaches the browser
         const MAPTILER_KEY_STORAGE = 'maptiler_api_key';
 
         function getMaptilerKey() { return (localStorage.getItem(MAPTILER_KEY_STORAGE) || '').trim(); }
+
+        function mapStyleUrl() {
+            // Proxy mode (server has MAPTILER_API_KEY) keeps the key off the client entirely.
+            return mapProxy
+                ? '/api/maptiler/maps/streets-v2/style.json'
+                : 'https://api.maptiler.com/maps/streets-v2/style.json?key=' + encodeURIComponent(getMaptilerKey());
+        }
 
         function teardownMaplibre() {
             if (maplibreMap) { try { maplibreMap.remove(); } catch (e) { /* already gone */ } maplibreMap = null; }
@@ -2189,7 +2202,7 @@
             else localStorage.removeItem(MAPTILER_KEY_STORAGE);
             document.getElementById('mapKeyRow').classList.add('hidden');
             maplibreFailed = false;
-            if (val && typeof maplibregl !== 'undefined') {
+            if (val && typeof maplibregl !== 'undefined' && !mapProxy) {
                 initMaplibreMap()
                     .then(() => { if (exploreLoaded) renderMapDots(filteredExploreRows()); })
                     .catch(() => useFallbackMap('MapTiler rejected the key or tiles did not load — using the offline sketch map.'));
@@ -2201,7 +2214,7 @@
         function initMaplibreMap() {
             return new Promise((resolve, reject) => {
                 const key = getMaptilerKey();
-                if (!key) { reject(new Error('no MapTiler key configured')); return; }
+                if (!key && !mapProxy) { reject(new Error('no MapTiler key configured')); return; }
                 let settled = false;
                 let timer = null;
                 let onVis = null;
@@ -2228,7 +2241,7 @@
                 try {
                     maplibreMap = new maplibregl.Map({
                         container: 'maplibreContainer',
-                        style: 'https://api.maptiler.com/maps/streets-v2/style.json?key=' + encodeURIComponent(key),
+                        style: mapStyleUrl(),
                         center: [(mapData.fit.lon0 + mapData.fit.lon1) / 2, (mapData.fit.lat0 + mapData.fit.lat1) / 2],
                         zoom: 6.2,
                         attributionControl: { compact: true },
@@ -2319,12 +2332,13 @@
         async function loadMapData() {
             if (mapData) return mapData;
             mapData = await fetchJSON('/static/gujarat_map.json');
-            if (getMaptilerKey() && typeof maplibregl !== 'undefined' && !maplibreFailed) {
+            const webglWanted = mapProxy || getMaptilerKey();
+            if (typeof maplibregl !== 'undefined' && webglWanted && !maplibreFailed) {
                 try {
                     await initMaplibreMap();
                     return mapData;
                 } catch (e) { useFallbackMap(); }
-            } else if (typeof maplibregl !== 'undefined' && !maplibreFailed && !getMaptilerKey()) {
+            } else if (typeof maplibregl !== 'undefined' && !webglWanted) {
                 document.getElementById('mapKeyRow').classList.remove('hidden');
             }
             renderMapDistricts();
@@ -2439,10 +2453,11 @@
             }
             if (maplibreMap && maplibreMap.getSource('projects')) {
                 updateMaplibrePins(rows);
-                document.getElementById('mapEmpty').classList.toggle('hidden', rows.some(r => r.latitude !== null && r.latitude !== undefined && r.longitude !== null && r.longitude !== undefined));
-                syncMapZoom();
-                return;
-            }
+            document.getElementById('mapEmpty').classList.toggle('hidden', rows.some(r => r.latitude !== null && r.latitude !== undefined && r.longitude !== null && r.longitude !== undefined));
+            updateDistrictChip(rows.length);
+            syncMapZoom();
+            return;
+        }
             const g = document.getElementById('mapDots');
             const NS = 'http://www.w3.org/2000/svg';
             g.innerHTML = '';
@@ -2483,7 +2498,21 @@
                 plotted++;
             });
             document.getElementById('mapEmpty').classList.toggle('hidden', plotted > 0);
+            updateDistrictChip(plotted);
             syncMapZoom();
+        }
+
+        function updateDistrictChip(matchCount) {
+            const chip = document.getElementById('mapDistrictChip');
+            const name = exploreState.filters.district;
+            if (name) {
+                document.getElementById('mapDistrictChipText').textContent = `${name} · ${matchCount} project${matchCount === 1 ? '' : 's'}`;
+                chip.classList.remove('hidden');
+                chip.classList.add('inline-flex');
+            } else {
+                chip.classList.add('hidden');
+                chip.classList.remove('inline-flex');
+            }
         }
 
         function selectMapDot(r) {

@@ -1,5 +1,6 @@
 """Configuration and path resolution for Real Estate Intelligence."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -9,6 +10,29 @@ WORKSPACE_ROOT = PACKAGE_ROOT.parent
 # Ensure workspace root is in sys.path for cross-package imports
 if str(WORKSPACE_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKSPACE_ROOT))
+
+
+def _load_env_file() -> None:
+    """Load KEY=VALUE pairs from the workspace-root .env into os.environ.
+
+    Never overrides variables that are already set; .env is gitignored and is the
+    documented place for secrets such as MAPTILER_API_KEY.
+    """
+    for candidate in (WORKSPACE_ROOT / ".env", Path.cwd() / ".env"):
+        if candidate.is_file():
+            try:
+                for line in candidate.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, value = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), value.strip())
+            except OSError:
+                pass
+            break
+
+
+_load_env_file()
 
 # Default source run containing raw JSON snapshots and binary documents
 DEFAULT_SOURCE_RUN = WORKSPACE_ROOT / "gujrera_pipeline" / "data" / "runs" / "nine_projects_2026_10_15"

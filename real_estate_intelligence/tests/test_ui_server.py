@@ -326,6 +326,20 @@ class TestUIServerEndpoints(unittest.TestCase):
         code, _ = self._make_get_request("/static/../server.py")
         self.assertEqual(code, 404)
 
+    def test_map_config_and_proxy_guard(self):
+        import os
+        saved = os.environ.pop("MAPTILER_API_KEY", None)
+        try:
+            code, body = self._make_get_request("/api/map/config")
+            self.assertEqual(code, 200)
+            self.assertEqual(json.loads(body.decode("utf-8")), {"maptiler_proxy": False})
+            # without a server key the proxy is disabled entirely
+            code, _ = self._make_get_request("/api/maptiler/maps/streets-v2/style.json")
+            self.assertEqual(code, 404)
+        finally:
+            if saved is not None:
+                os.environ["MAPTILER_API_KEY"] = saved
+
     def test_revision_state_pure_function(self):
         from real_estate_intelligence.ui.server import _revision_state
         self.assertEqual(_revision_state(1, 0), "insufficient_history")

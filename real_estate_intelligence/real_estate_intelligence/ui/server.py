@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
+import urllib.error
+import urllib.request
 
 from ..analytics.audit import ProjectAuditor
 from ..analytics.claims_checker import SalesClaimVerifier
@@ -68,6 +70,19 @@ def _revision_state(filings_count: int, extension_rows_count: int) -> str:
     if extension_rows_count > 0:
         return "revision_observed"
     return "no_revision_observed"
+
+
+MAPTILER_UPSTREAM = "https://api.maptiler.com/"
+
+
+def _maptiler_key() -> Optional[str]:
+    """Server-side MapTiler key from the environment (.env MAPTILER_API_KEY or env var).
+
+    The key never leaves the server: browsers call the /api/maptiler/ proxy, which
+    attaches the key to upstream requests itself.
+    """
+    key = os.environ.get("MAPTILER_API_KEY")
+    return key.strip() if key and key.strip() else None
 
 
 class IntelligenceRequestHandler(BaseHTTPRequestHandler):
@@ -137,6 +152,14 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/explore":
             self._send_json(self._explore_rows())
+            return
+
+        if path == "/api/map/config":
+            self._send_json({"maptiler_proxy": _maptiler_key() is not None})
+            return
+
+        if path.startswith("/api/maptiler/"):
+            self._proxy_maptiler(path[len("/api/maptiler/"):], parsed.query)
             return
 
         if path.startswith("/api/project/"):
@@ -329,6 +352,58 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             return
 
         self.send_error(404, "Endpoint not found")
+
+    def _proxy_maptiler(self, subpath: str, query: str) -> None:
+        """Stream a MapTiler resource with the server-side key attached.
+
+        style.json responses have their embedded upstream URLs rewritten to the proxy
+        so tiles, glyphs, and sprites also flow through here — the browser never sees
+        the key. Requires MAPTILER_API_KEY in the environment (or workspace .env).
+        """
+        key = _maptiler_key()
+        if not key:
+            self.send_error(404, "Map proxy not configured (set MAPTILER_API_KEY)")
+            return
+        if not subpath or ".." in subpath or subpath.startswith("/"):
+            self.send_error(400, "Invalid map resource path")
+            return
+        params = []
+        for k, vals in parse_qs(query, keep_blank_values=True).items():
+            for v in vals:
+                if k != "key":
+                    params.append((k, v))
+        params.append(("key", key))
+        url = MAPTILER_UPSTREAM + subpath + "?" + urlencode(params)
+        req = urllib.request.Request(url, headers={"User-Agent": "gujrera-intelligence-ui"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                body = resp.read()
+                ctype = resp.headers.get("Content-Type", "application/octet-stream")
+        except urllib.error.HTTPError as e:
+            self.send_error(e.code, "Upstream map resource error")
+            return
+        except Exception:
+            self.send_error(502, "Upstream map resource unreachable")
+            return
+        if "json" in ctype:
+            # Rewrite EVERY JSON body (style.json, TileJSON, …): point embedded upstream
+            # URLs at this server and strip embedded keys, so neither the secret nor a
+            # direct upstream URL ever reaches the browser. URLs are absolutized against
+            # the request host because MapLibre requires absolute sprite URLs.
+            import re as _re
+            host = self.headers.get("Host", "127.0.0.1")
+            proto = self.headers.get("X-Forwarded-Proto") or (
+                "http" if host.split(":")[0] in ("127.0.0.1", "localhost", "::1") else "https"
+            )
+            origin = f"{proto}://{host}"
+            body = body.replace(MAPTILER_UPSTREAM.encode("utf-8"), (origin + "/api/maptiler/").encode("utf-8"))
+            body = _re.sub(rb"[?&]key=[^&\"']+", b"", body)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "public, max-age=86400" if "/tiles/" in subpath else "public, max-age=300")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _explore_rows(self) -> List[Dict[str, Any]]:
         """One pre-aggregated row per project for the Explore table (route contract in ui/EGM.md).
