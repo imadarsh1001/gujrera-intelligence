@@ -83,8 +83,24 @@ Sources: official docs only — shadcn-vue.com (Data Table, Chart, Sheet), TanSt
 - **Fixes completed:** §1 (13 items) + review-driven hardening (`45a800d`) — every fix verified; tests 42/42.
 - **Release-1 features shipped:** §1b table (Explore + map + proxy + revision display), concept per `docs/reviews/ui-discovery/concepts_brief.md` Goals vs. Non-Goals.
 - **Decisions pending / follow-ons:**
-  - **Statewide download-gap audit** (author-requested separate task) before any 17,634-project ingestion.
+  - **Statewide pipeline & audit boundary**: All scraper endpoints, harvest rates, lake architecture, and crawler audits reside strictly in the private `gujrera-pipeline` repo (`docs/STATEWIDE_DATA_AUDIT.md`). The UI repo consumes curated SQLite schemas only (§9).
   - **Frontend re-evaluation triggers** (standing): statewide ingestion or the Ask-Across-Projects stage.
   - **MapTiler key hygiene**: the temp key used for testing was pasted in chat — rotate it / set domain restrictions in the MapTiler dashboard; the deployment key belongs in `.env` (gitignored) and can stay server-side via the proxy.
   - **Revision-semantics review** (brief Key Decision 9): how the three states treat early completion or future declared-date changes, once longer filing history exists.
   - **Scenario-2 live rerun** when Ahmedabad-city/locality data lands (static mock exists for the walkthrough).
+
+## 9. UI Data Capabilities & SQLite Schema Dependencies
+
+The UI layer is strictly consumer-facing and decoupled from crawler/scraping mechanics. It queries the local curated database (`real_estate_intelligence/data/intelligence.sqlite`).
+
+### SQLite Schema Contracts Consumed by the UI
+
+| UI Feature / View | Required SQLite Tables & Columns | Current Status |
+|---|---|---|
+| **Explore Table** | `projects` (`project_id`, `project_name`, `district_name`, `project_type`, `project_status`, `start_date`, `end_date`, `total_project_cost`), `unit_transactions` (booked metrics) | Active for curated projects (expanded once statewide ETL runs) |
+| **Interactive Map** | `project_locations` (`project_id`, `lat`, `lon`, `boundary_polygon`) | Active for 9 sample projects; pending portal GPS ingestion for statewide |
+| **Project Detail & Radar** | `applications` (`application_id`, `application_type`, `submission_date`, `approval_date`, `final_status`), `project_clearances` (BU / NOC grants) | Active (mapped via `90695b0` and test fixture `db82891`) |
+| **Price Benchmarks** | `unit_transactions` (`block_name`, `usage_type`, `carpet_area_sqm`, `consideration_amount`, `status`) | Active for curated schemes; will populate district benchmarks when Form 3 lake is ingested |
+| **Promoter & Entity Graph** | `project_parties` / graph tables | Active for sample network |
+
+*Note: All data ingestion, crawler endpoints, rate limiting, and raw Form 3 lake processing are specified and maintained in `gujrera-pipeline`.*
