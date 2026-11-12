@@ -11,6 +11,11 @@ WORKSPACE_ROOT = PACKAGE_ROOT.parent
 if str(WORKSPACE_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKSPACE_ROOT))
 
+# Sibling pipeline repo path resolution
+PARENT_DIR = WORKSPACE_ROOT.parent
+if (PARENT_DIR / "gujrera_pipeline").exists() and str(PARENT_DIR) not in sys.path:
+    sys.path.insert(0, str(PARENT_DIR))
+
 
 def _load_env_file() -> None:
     """Load KEY=VALUE pairs from the workspace-root .env into os.environ.
@@ -35,7 +40,10 @@ def _load_env_file() -> None:
 _load_env_file()
 
 # Default source run containing raw JSON snapshots and binary documents
-DEFAULT_SOURCE_RUN = WORKSPACE_ROOT / "gujrera_pipeline" / "data" / "runs" / "nine_projects_2026_10_15"
+# Resolves to sibling gujrera_pipeline repo if present, fallback to nested folder
+_SIBLING_SOURCE_RUN = WORKSPACE_ROOT.parent / "gujrera_pipeline" / "data" / "runs" / "nine_projects_2026_10_15"
+_NESTED_SOURCE_RUN = WORKSPACE_ROOT / "gujrera_pipeline" / "data" / "runs" / "nine_projects_2026_10_15"
+DEFAULT_SOURCE_RUN = _SIBLING_SOURCE_RUN if _SIBLING_SOURCE_RUN.exists() else _NESTED_SOURCE_RUN
 
 # Local intelligence working directory for curated SQLite DB and derived indices
 DEFAULT_DATA_DIR = PACKAGE_ROOT / "data"

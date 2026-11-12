@@ -54,7 +54,11 @@ echo   -- Public repository pushed.
 :sync_private
 echo.
 echo [2/2] Syncing Private Repo: gujrera-pipeline...
-pushd gujrera_pipeline
+if exist ..\gujrera_pipeline (
+    pushd ..\gujrera_pipeline
+) else (
+    pushd gujrera_pipeline
+)
 git fetch origin
 if errorlevel 1 (
     echo   FETCH FAILED - aborting private repo.

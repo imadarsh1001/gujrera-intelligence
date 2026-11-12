@@ -65,8 +65,9 @@ function Sync-Repo {
     }
 }
 
+$pipelinePath = if (Test-Path "$PSScriptRoot\..\gujrera_pipeline") { "$PSScriptRoot\..\gujrera_pipeline" } else { "$PSScriptRoot\gujrera_pipeline" }
 $okPublic = Sync-Repo -Path "." -Name "Public Repo: gujrera-intelligence"
-$okPrivate = Sync-Repo -Path "gujrera_pipeline" -Name "Private Repo: gujrera-pipeline"
+$okPrivate = Sync-Repo -Path $pipelinePath -Name "Private Repo: gujrera-pipeline"
 
 if ($okPublic -and $okPrivate) {
     Write-Host "`nAll repositories synchronized successfully!`n" -ForegroundColor Green
