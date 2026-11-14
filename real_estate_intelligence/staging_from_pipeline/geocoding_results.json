@@ -1,0 +1,823 @@
+[
+  {
+    "projectId": "13560",
+    "projectName": "Skydeck Serene",
+    "address_loc": "F.P. No. 103,  Survey No. 855, T.P.S. No. 429 (Godhavi-Manipur)Near Global Mission International School, Godhavi",
+    "address_csv": "F.P. No. 103,  Survey No. 855, T.P.S. No. 429 (Godhavi-Manipur) Near Global Mission International School, Godhavi",
+    "district": "Ahmedabad",
+    "subDistrict": "Sanand",
+    "ground_truth": {
+      "lat": 23.020159901927286,
+      "lon": 72.42678179866233,
+      "first_vertex_lat": 23.020101356973598,
+      "first_vertex_lon": 72.42717769271293,
+      "polygon_vertices": 5
+    },
+    "tests": {
+      "nominatim_raw_csv": {
+        "query": "F.P. No. 103,  Survey No. 855, T.P.S. No. 429 (Godhavi-Manipur) Near Global Mission International School, Godhavi, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_raw_csv": {
+        "query": "F.P. No. 103,  Survey No. 855, T.P.S. No. 429 (Godhavi-Manipur) Near Global Mission International School, Godhavi, Gujarat, India",
+        "success": true,
+        "lat": 10.772121278999348,
+        "lon": 79.7651511048141,
+        "distance_km": 1568.881,
+        "distance_m": 1568881.0,
+        "matched_name": "School, Tamil Nadu, India",
+        "match_quality": "GROSS_MISMATCH"
+      },
+      "nominatim_cleaned_regex": {
+        "query": "Near Global Mission International School Godhavi, Sanand, Ahmedabad, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_cleaned_regex": {
+        "query": "Near Global Mission International School Godhavi, Sanand, Ahmedabad, Gujarat, India",
+        "success": true,
+        "lat": 22.992451157934163,
+        "lon": 72.38256119191647,
+        "distance_km": 5.475,
+        "distance_m": 5475.2,
+        "matched_name": "Sanand, Sanand Taluka, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_curated": {
+        "query": "Near Global Mission International School, Godhavi, Sanand, Ahmedabad, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_curated": {
+        "query": "Near Global Mission International School, Godhavi, Sanand, Ahmedabad, Gujarat, India",
+        "success": true,
+        "lat": 22.992451157934163,
+        "lon": 72.38256119191647,
+        "distance_km": 5.475,
+        "distance_m": 5475.2,
+        "matched_name": "Sanand, Sanand Taluka, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_locality": {
+        "query": "Godhavi, Sanand, Ahmedabad, Gujarat, India",
+        "success": true,
+        "lat": 23.0233196,
+        "lon": 72.4087089,
+        "distance_km": 1.883,
+        "distance_m": 1882.6,
+        "matched_name": "Godhavi, Sanand Taluka, Ahmedabad, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "maptiler_locality": {
+        "query": "Godhavi, Sanand, Ahmedabad, Gujarat, India",
+        "success": true,
+        "lat": 23.023319708123744,
+        "lon": 72.40870870649815,
+        "distance_km": 1.883,
+        "distance_m": 1882.7,
+        "matched_name": "Godhavi, Sanand Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      }
+    }
+  },
+  {
+    "projectId": "13705",
+    "projectName": "THE GATE BY DEV AASHISH",
+    "address_loc": "THE GATE BY DEV AASHISH ROYAL STREET",
+    "address_csv": "THE GATE BY DEV AASHISH ROYAL STREET PDPU ROAD KOBA",
+    "district": "Gandhinagar",
+    "subDistrict": "Gandhinagar",
+    "ground_truth": {
+      "lat": 23.154061493130175,
+      "lon": 72.65675538681403,
+      "first_vertex_lat": 23.154226109242973,
+      "first_vertex_lon": 72.65673359386578,
+      "polygon_vertices": 4
+    },
+    "tests": {
+      "nominatim_raw_csv": {
+        "query": "THE GATE BY DEV AASHISH ROYAL STREET PDPU ROAD KOBA, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_raw_csv": {
+        "query": "THE GATE BY DEV AASHISH ROYAL STREET PDPU ROAD KOBA, Gujarat, India",
+        "success": true,
+        "lat": 19.296593750753466,
+        "lon": 74.6736179664731,
+        "distance_km": 477.138,
+        "distance_m": 477137.6,
+        "matched_name": "Dev, Maharashtra, India",
+        "match_quality": "GROSS_MISMATCH"
+      },
+      "nominatim_cleaned_regex": {
+        "query": "THE GATE BY DEV AASHISH ROYAL STREET PDPU ROAD KOBA, Gandhinagar, Gandhinagar, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_cleaned_regex": {
+        "query": "THE GATE BY DEV AASHISH ROYAL STREET PDPU ROAD KOBA, Gandhinagar, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 7.736,
+        "distance_m": 7736.0,
+        "matched_name": "Gandhinagar, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_curated": {
+        "query": "PDPU Road, Koba, Gandhinagar, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_curated": {
+        "query": "PDPU Road, Koba, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 7.736,
+        "distance_m": 7736.0,
+        "matched_name": "Gandhinagar, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_locality": {
+        "query": "Koba, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.1445974,
+        "lon": 72.6339875,
+        "distance_km": 2.555,
+        "distance_m": 2554.7,
+        "matched_name": "Koba - Gandhinagar Highway, Gandhinagar, Gandhinagar Taluka, Gandhinagar, Gujarat, 382421, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "maptiler_locality": {
+        "query": "Koba, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 7.736,
+        "distance_m": 7736.0,
+        "matched_name": "Gandhinagar, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      }
+    }
+  },
+  {
+    "projectId": "16104",
+    "projectName": "VRUNDAVAN ELYSIA",
+    "address_loc": "VRUNDAVAN ELYSIA, OPP. BAPS SCHOOL,",
+    "address_csv": "VRUNDAVAN ELYSIA, OPP. BAPS SCHOOL,  RAYSAN, GANDHINAGAR",
+    "district": "Gandhinagar",
+    "subDistrict": "Gandhinagar",
+    "ground_truth": {
+      "lat": 23.16453754771177,
+      "lon": 72.64339279627387,
+      "first_vertex_lat": 23.165156093797425,
+      "first_vertex_lon": 72.64335435127799,
+      "polygon_vertices": 6
+    },
+    "tests": {
+      "nominatim_raw_csv": {
+        "query": "VRUNDAVAN ELYSIA, OPP. BAPS SCHOOL,  RAYSAN, GANDHINAGAR, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_raw_csv": {
+        "query": "VRUNDAVAN ELYSIA, OPP. BAPS SCHOOL,  RAYSAN, GANDHINAGAR, Gujarat, India",
+        "success": true,
+        "lat": 23.167141925116173,
+        "lon": 72.6485625654459,
+        "distance_km": 0.603,
+        "distance_m": 602.6,
+        "matched_name": "Raysan Road, 382 421 Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "nominatim_cleaned_regex": {
+        "query": "VRUNDAVAN ELYSIA OPP. BAPS SCHOOL RAYSAN GANDHINAGAR, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_cleaned_regex": {
+        "query": "VRUNDAVAN ELYSIA OPP. BAPS SCHOOL RAYSAN GANDHINAGAR, Gujarat, India",
+        "success": true,
+        "lat": 23.167141925116173,
+        "lon": 72.6485625654459,
+        "distance_km": 0.603,
+        "distance_m": 602.6,
+        "matched_name": "Raysan Road, 382 421 Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "nominatim_curated": {
+        "query": "Opp. BAPS School, Raysan, Gandhinagar, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_curated": {
+        "query": "Opp. BAPS School, Raysan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.165882845793924,
+        "lon": 72.65038043839775,
+        "distance_km": 0.73,
+        "distance_m": 729.8,
+        "matched_name": "Raysan, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "nominatim_locality": {
+        "query": "Raysan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.1670595,
+        "lon": 72.6606212,
+        "distance_km": 1.783,
+        "distance_m": 1783.4,
+        "matched_name": "Raysan, Gandhinagar Taluka, Gandhinagar, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "maptiler_locality": {
+        "query": "Raysan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.165882845793924,
+        "lon": 72.65038043839775,
+        "distance_km": 0.73,
+        "distance_m": 729.8,
+        "matched_name": "Raysan, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      }
+    }
+  },
+  {
+    "projectId": "16562",
+    "projectName": "THE BALCONY",
+    "address_loc": "THE BALCONY BY KAAVYARATNA, OPP. METRO STATION",
+    "address_csv": "THE BALCONY BY KAAVYARATNA, OPP. METRO STATION GIFT CITY ROAD,RANDESAN,GANDHINAGAR, GUJARAT",
+    "district": "Gandhinagar",
+    "subDistrict": "Gandhinagar",
+    "ground_truth": {
+      "lat": 23.185404460483923,
+      "lon": 72.64419651215795,
+      "first_vertex_lat": 23.18560417267859,
+      "first_vertex_lon": 72.64372645502809,
+      "polygon_vertices": 4
+    },
+    "tests": {
+      "nominatim_raw_csv": {
+        "query": "THE BALCONY BY KAAVYARATNA, OPP. METRO STATION GIFT CITY ROAD,RANDESAN,GANDHINAGAR, GUJARAT, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_raw_csv": {
+        "query": "THE BALCONY BY KAAVYARATNA, OPP. METRO STATION GIFT CITY ROAD,RANDESAN,GANDHINAGAR, GUJARAT, Gujarat, India",
+        "success": true,
+        "lat": 23.162187737103114,
+        "lon": 72.68279612098081,
+        "distance_km": 4.715,
+        "distance_m": 4715.3,
+        "matched_name": "GIFT City, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_cleaned_regex": {
+        "query": "THE BALCONY BY KAAVYARATNA OPP. METRO STATION GIFT CITY ROAD RANDESAN GANDHINAGAR GUJARAT, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_cleaned_regex": {
+        "query": "THE BALCONY BY KAAVYARATNA OPP. METRO STATION GIFT CITY ROAD RANDESAN GANDHINAGAR GUJARAT, Gujarat, India",
+        "success": true,
+        "lat": 23.162187737103114,
+        "lon": 72.68279612098081,
+        "distance_km": 4.715,
+        "distance_m": 4715.3,
+        "matched_name": "GIFT City, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_curated": {
+        "query": "Gift City Road, Randesan, Gandhinagar, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_curated": {
+        "query": "Gift City Road, Randesan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.163174819725228,
+        "lon": 72.68274899572134,
+        "distance_km": 4.652,
+        "distance_m": 4652.0,
+        "matched_name": "GIFT City Road, 382 355 Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_locality": {
+        "query": "Randesan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.1790869,
+        "lon": 72.6473227,
+        "distance_km": 0.772,
+        "distance_m": 771.7,
+        "matched_name": "Randesan, Randesan Road, Radesan, Gandhinagar, Gandhinagar Taluka, Gandhinagar, Gujarat, 382007, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "maptiler_locality": {
+        "query": "Randesan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 4.244,
+        "distance_m": 4243.7,
+        "matched_name": "Gandhinagar, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      }
+    }
+  },
+  {
+    "projectId": "17255",
+    "projectName": "ATMOS BY SOLAIRE",
+    "address_loc": "ATMOS by solaire , SUB PLOT NUMBER -32/2, Opp. Akshat Icon, Near S G Highway,\"Sargasan Cross Roads, Sargasan, Gandhinagar 382421 India \"",
+    "address_csv": "ATMOS by solaire , SUB PLOT NUMBER -32/2, Opp. Akshat Icon, Near S G Highway, \"Sargasan Cross Roads, Sargasan, Gandhinagar 382421 India \"",
+    "district": "Gandhinagar",
+    "subDistrict": "Gandhinagar",
+    "ground_truth": {
+      "lat": 23.191857265832432,
+      "lon": 72.61940955195422,
+      "first_vertex_lat": 23.191620581604273,
+      "first_vertex_lon": 72.61975233826632,
+      "polygon_vertices": 5
+    },
+    "tests": {
+      "nominatim_raw_csv": {
+        "query": "ATMOS by solaire , SUB PLOT NUMBER -32/2, Opp. Akshat Icon, Near S G Highway, \"Sargasan Cross Roads, Sargasan, Gandhinagar 382421 India \", Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_raw_csv": {
+        "query": "ATMOS by solaire , SUB PLOT NUMBER -32/2, Opp. Akshat Icon, Near S G Highway, \"Sargasan Cross Roads, Sargasan, Gandhinagar 382421 India \", Gujarat, India",
+        "success": false,
+        "error": "HTTP Error 404: Not Found",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "nominatim_cleaned_regex": {
+        "query": "ATMOS by solaire Opp. Akshat Icon Near S G Highway Sargasan Cross Roads Sargasan Gandhinagar 382421 India, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_cleaned_regex": {
+        "query": "ATMOS by solaire Opp. Akshat Icon Near S G Highway Sargasan Cross Roads Sargasan Gandhinagar 382421 India, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 4.637,
+        "distance_m": 4636.8,
+        "matched_name": "Gandhinagar, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_curated": {
+        "query": "Sargasan Cross Roads, Sargasan, Gandhinagar, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_curated": {
+        "query": "Sargasan Cross Roads, Sargasan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.184241639489862,
+        "lon": 72.61544246190851,
+        "distance_km": 0.939,
+        "distance_m": 938.9,
+        "matched_name": "Sargasan, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "nominatim_locality": {
+        "query": "Sargasan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.1842801,
+        "lon": 72.6156802,
+        "distance_km": 0.925,
+        "distance_m": 924.8,
+        "matched_name": "Sargasan, Gandhinagar, Gandhinagar Taluka, Gandhinagar, Gujarat, 382421, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "maptiler_locality": {
+        "query": "Sargasan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.184241639489862,
+        "lon": 72.61544246190851,
+        "distance_km": 0.939,
+        "distance_m": 938.9,
+        "matched_name": "Sargasan, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      }
+    }
+  },
+  {
+    "projectId": "17830",
+    "projectName": "SANDALWOOD",
+    "address_loc": "SURVEY NO:- 229, FINAL PLOT NO 116",
+    "address_csv": "SURVEY NO:- 229, FINAL PLOT NO 116 T.P.S. NO 5,RANDESAN ROAD, GANDHINAGAR,",
+    "district": "Gandhinagar",
+    "subDistrict": "Gandhinagar",
+    "ground_truth": {
+      "lat": 23.182024716059964,
+      "lon": 72.6497534906879,
+      "first_vertex_lat": 23.18167853975751,
+      "first_vertex_lon": 72.64977387547641,
+      "polygon_vertices": 5
+    },
+    "tests": {
+      "nominatim_raw_csv": {
+        "query": "SURVEY NO:- 229, FINAL PLOT NO 116 T.P.S. NO 5,RANDESAN ROAD, GANDHINAGAR,, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_raw_csv": {
+        "query": "SURVEY NO:- 229, FINAL PLOT NO 116 T.P.S. NO 5,RANDESAN ROAD, GANDHINAGAR,, Gujarat, India",
+        "success": true,
+        "lat": 9.10751512553675,
+        "lon": 76.6039130105986,
+        "distance_km": 1620.654,
+        "distance_m": 1620654.0,
+        "matched_name": "Plot, Kerala, India",
+        "match_quality": "GROSS_MISMATCH"
+      },
+      "nominatim_cleaned_regex": {
+        "query": "RANDESAN ROAD GANDHINAGAR, Gujarat, India",
+        "success": true,
+        "lat": 23.1745647,
+        "lon": 72.6427772,
+        "distance_km": 1.094,
+        "distance_m": 1093.9,
+        "matched_name": "Randesan Road, Gandhinagar, Gandhinagar Taluka, Gandhinagar, Gujarat, 382009, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "maptiler_cleaned_regex": {
+        "query": "RANDESAN ROAD GANDHINAGAR, Gujarat, India",
+        "success": true,
+        "lat": 23.17444978381117,
+        "lon": 72.64439977705479,
+        "distance_km": 1.004,
+        "distance_m": 1004.5,
+        "matched_name": "Randesan Road, 382 007 Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "nominatim_curated": {
+        "query": "Randesan Road, Randesan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.1790845,
+        "lon": 72.6472583,
+        "distance_km": 0.415,
+        "distance_m": 414.7,
+        "matched_name": "Randesan, Randesan Road, Radesan, Gandhinagar, Gandhinagar Taluka, Gandhinagar, Gujarat, 382007, India",
+        "match_quality": "GOOD_NEIGHBORHOOD"
+      },
+      "maptiler_curated": {
+        "query": "Randesan Road, Randesan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.17444978381117,
+        "lon": 72.64439977705479,
+        "distance_km": 1.004,
+        "distance_m": 1004.5,
+        "matched_name": "Randesan Road, 382 007 Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "nominatim_locality": {
+        "query": "Randesan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.1790869,
+        "lon": 72.6473227,
+        "distance_km": 0.41,
+        "distance_m": 410.4,
+        "matched_name": "Randesan, Randesan Road, Radesan, Gandhinagar, Gandhinagar Taluka, Gandhinagar, Gujarat, 382007, India",
+        "match_quality": "GOOD_NEIGHBORHOOD"
+      },
+      "maptiler_locality": {
+        "query": "Randesan, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 4.589,
+        "distance_m": 4588.6,
+        "matched_name": "Gandhinagar, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      }
+    }
+  },
+  {
+    "projectId": "17855",
+    "projectName": "PROVINCE",
+    "address_loc": "NR. SAVYA SKYZ, 200' RING ROAD,ZUNDAL",
+    "address_csv": "NR. SAVYA SKYZ, 200' RING ROAD, ZUNDAL",
+    "district": "Gandhinagar",
+    "subDistrict": "Gandhinagar",
+    "ground_truth": {
+      "lat": 23.132617577802257,
+      "lon": 72.57610899664718,
+      "first_vertex_lat": 23.133034425435334,
+      "first_vertex_lon": 72.57631284453231,
+      "polygon_vertices": 4
+    },
+    "tests": {
+      "nominatim_raw_csv": {
+        "query": "NR. SAVYA SKYZ, 200' RING ROAD, ZUNDAL, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_raw_csv": {
+        "query": "NR. SAVYA SKYZ, 200' RING ROAD, ZUNDAL, Gujarat, India",
+        "success": true,
+        "lat": 23.135310018444812,
+        "lon": 72.58217799198451,
+        "distance_km": 0.689,
+        "distance_m": 689.0,
+        "matched_name": "Zundal, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "nominatim_cleaned_regex": {
+        "query": "NR. SAVYA SKYZ 200 RING ROAD ZUNDAL, Gandhinagar, Gandhinagar, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_cleaned_regex": {
+        "query": "NR. SAVYA SKYZ 200 RING ROAD ZUNDAL, Gandhinagar, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 12.55,
+        "distance_m": 12550.3,
+        "matched_name": "Gandhinagar, Gujarat, India",
+        "match_quality": "GROSS_MISMATCH"
+      },
+      "nominatim_curated": {
+        "query": "200 Feet Ring Road, Zundal, Gandhinagar, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_curated": {
+        "query": "200 Feet Ring Road, Zundal, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.135310018444812,
+        "lon": 72.58217799198451,
+        "distance_km": 0.689,
+        "distance_m": 689.0,
+        "matched_name": "Zundal, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "nominatim_locality": {
+        "query": "Zundal, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.1354449,
+        "lon": 72.581953,
+        "distance_km": 0.675,
+        "distance_m": 675.2,
+        "matched_name": "Zundal, Adalaj, Gandhinagar Taluka, Gandhinagar, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "maptiler_locality": {
+        "query": "Zundal, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.135310018444812,
+        "lon": 72.58217799198451,
+        "distance_km": 0.689,
+        "distance_m": 689.0,
+        "matched_name": "Zundal, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      }
+    }
+  },
+  {
+    "projectId": "20523",
+    "projectName": "PRAMUKH PENTAGON",
+    "address_loc": "Survey No 762,TP No 28, FP NO 143,",
+    "address_csv": "Survey No 762,TP No 28, FP NO 143, NR THAKAR FARM,KUDASAN -POR ROAD,POR,GANDHINAGAR",
+    "district": "Gandhinagar",
+    "subDistrict": "Gandhinagar",
+    "ground_truth": {
+      "lat": 23.178045462537824,
+      "lon": 72.61845351164709,
+      "first_vertex_lat": 23.178159872145468,
+      "first_vertex_lon": 72.61881936495672,
+      "polygon_vertices": 5
+    },
+    "tests": {
+      "nominatim_raw_csv": {
+        "query": "Survey No 762,TP No 28, FP NO 143, NR THAKAR FARM,KUDASAN -POR ROAD,POR,GANDHINAGAR, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_raw_csv": {
+        "query": "Survey No 762,TP No 28, FP NO 143, NR THAKAR FARM,KUDASAN -POR ROAD,POR,GANDHINAGAR, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 5.933,
+        "distance_m": 5932.9,
+        "matched_name": "Gandhinagar, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_cleaned_regex": {
+        "query": "NR THAKAR FARM KUDASAN POR ROAD POR GANDHINAGAR, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_cleaned_regex": {
+        "query": "NR THAKAR FARM KUDASAN POR ROAD POR GANDHINAGAR, Gujarat, India",
+        "success": true,
+        "lat": 23.17967036324394,
+        "lon": 72.63471465557814,
+        "distance_km": 1.672,
+        "distance_m": 1672.0,
+        "matched_name": "Kudasan-Por Road, 382 421 Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "nominatim_curated": {
+        "query": "Kudasan Por Road, Por, Gandhinagar, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_curated": {
+        "query": "Kudasan Por Road, Por, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.17967036324394,
+        "lon": 72.63471465557814,
+        "distance_km": 1.672,
+        "distance_m": 1672.0,
+        "matched_name": "Kudasan-Por Road, 382 421 Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "nominatim_locality": {
+        "query": "Por, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.1794665,
+        "lon": 72.6330561,
+        "distance_km": 1.501,
+        "distance_m": 1501.0,
+        "matched_name": "Kudasan-Por Road, Gandhinagar, Gandhinagar Taluka, Gandhinagar, Gujarat, 382009, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "maptiler_locality": {
+        "query": "Por, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 5.933,
+        "distance_m": 5932.9,
+        "matched_name": "Gandhinagar, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      }
+    }
+  },
+  {
+    "projectId": "24508",
+    "projectName": "REVANTA FORTUNE 3",
+    "address_loc": "REVANTA FORTUNE 3, NEAR GARMENT ZONE,K RAHEJA ROAD,",
+    "address_csv": "REVANTA FORTUNE 3, NEAR GARMENT ZONE,K RAHEJA ROAD, KOBA, GANDHINAGAR,382421",
+    "district": "Gandhinagar",
+    "subDistrict": "Gandhinagar",
+    "ground_truth": {
+      "lat": 23.154823800992087,
+      "lon": 72.63819982086677,
+      "first_vertex_lat": 23.15451676574956,
+      "first_vertex_lon": 72.63833460186977,
+      "polygon_vertices": 4
+    },
+    "tests": {
+      "nominatim_raw_csv": {
+        "query": "REVANTA FORTUNE 3, NEAR GARMENT ZONE,K RAHEJA ROAD, KOBA, GANDHINAGAR,382421, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_raw_csv": {
+        "query": "REVANTA FORTUNE 3, NEAR GARMENT ZONE,K RAHEJA ROAD, KOBA, GANDHINAGAR,382421, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 7.696,
+        "distance_m": 7695.8,
+        "matched_name": "Gandhinagar, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_cleaned_regex": {
+        "query": "REVANTA FORTUNE 3 NEAR GARMENT ZONE K RAHEJA ROAD KOBA GANDHINAGAR 382421, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_cleaned_regex": {
+        "query": "REVANTA FORTUNE 3 NEAR GARMENT ZONE K RAHEJA ROAD KOBA GANDHINAGAR 382421, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 7.696,
+        "distance_m": 7695.8,
+        "matched_name": "Gandhinagar, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_curated": {
+        "query": "K Raheja Road, Koba, Gandhinagar, Gujarat, India",
+        "success": false,
+        "error": "No results",
+        "distance_km": null,
+        "distance_m": null,
+        "match_quality": "FAILED"
+      },
+      "maptiler_curated": {
+        "query": "K Raheja Road, Koba, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 7.696,
+        "distance_m": 7695.8,
+        "matched_name": "Gandhinagar, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      },
+      "nominatim_locality": {
+        "query": "Koba, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.1445974,
+        "lon": 72.6339875,
+        "distance_km": 1.216,
+        "distance_m": 1216.0,
+        "matched_name": "Koba - Gandhinagar Highway, Gandhinagar, Gandhinagar Taluka, Gandhinagar, Gujarat, 382421, India",
+        "match_quality": "SUB_DISTRICT_LOCALITY"
+      },
+      "maptiler_locality": {
+        "query": "Koba, Gandhinagar, Gujarat, India",
+        "success": true,
+        "lat": 23.223287739259405,
+        "lon": 72.64922641217709,
+        "distance_km": 7.696,
+        "distance_m": 7695.8,
+        "matched_name": "Gandhinagar, Gandhinagar Taluka, Gujarat, India",
+        "match_quality": "DISTANT_SECTOR"
+      }
+    }
+  }
+]
