@@ -2,7 +2,7 @@
 
 import sqlite3
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, Dict, List
 
 from ..models.schema import DiscrepancyLead
 
@@ -293,7 +293,204 @@ class ProjectAuditor:
                 )
             )
 
+        # 10. Statutory Professional Credentials & Signer Coverage Audit
+        # Checks for linked signed Form 3 CA certificates in documents catalog,
+        # and verifies architect and structural engineer statutory registrations.
+        has_financial_activity = bool(
+            (prow["incurred_cost_inr"] and prow["incurred_cost_inr"] > 0)
+            or any(r["incurred_and_paid"] for r in fin_rows)
+        )
+
+        form3_count = self.con.execute(
+            "SELECT COUNT(*) FROM documents_catalog WHERE project_id = ? AND doc_type = 'form_three_ca'",
+            (project_id,),
+        ).fetchone()[0]
+
+        if has_financial_activity and form3_count == 0:
+            inc_cr = float(prow["incurred_cost_inr"] or 0) / 10_000_000.0
+            leads.append(
+                DiscrepancyLead(
+                    project_id=project_id,
+                    category="statutory",
+                    severity="HIGH",
+                    title="No Linked Signed Form 3 CA Certificate in Statutory Document Catalog",
+                    detail=(
+                        f"Project has recorded financial activity and expenditures (reported incurred cost: ₹{inc_cr:.2f} Cr), "
+                        "but no signed Form 3 Chartered Accountant certificate is on file in the statutory documents catalog."
+                    ),
+                    evidence_source="finances vs documents_catalog (doc_type='form_three_ca')",
+                    reconciliation_guidance=(
+                        "Under Section 4(2)(l)(D), all withdrawals from the designated 70% retention escrow account must be "
+                        "certified by a practicing Chartered Accountant via Form 3. Verify whether signed Form 3 certificates "
+                        "were filed under separate submissions or if withdrawals occurred without CA certification."
+                    ),
+                )
+            )
+
+        prof_rows = self.con.execute(
+            "SELECT role, name, firm_name, license_or_reg_no FROM professionals WHERE project_id = ?",
+            (project_id,),
+        ).fetchall()
+
+        architects = [r for r in prof_rows if r["role"].lower() == "architect"]
+        if not architects:
+            leads.append(
+                DiscrepancyLead(
+                    project_id=project_id,
+                    category="statutory",
+                    severity="MEDIUM",
+                    title="No Statutory Architect Assigned in Project Registration",
+                    detail=(
+                        "Project registration records do not contain a designated architect assignment. "
+                        "Section 4 requires an architect to certify physical milestone percentage via Form 1."
+                    ),
+                    evidence_source="professionals table (role='architect')",
+                    reconciliation_guidance=(
+                        "Inspect Form 1 filings to confirm whether a licensed architect has certified milestone progress."
+                    ),
+                )
+            )
+        else:
+            for arch in architects:
+                reg_no = arch["license_or_reg_no"]
+                if not reg_no or not str(reg_no).strip():
+                    leads.append(
+                        DiscrepancyLead(
+                            project_id=project_id,
+                            category="statutory",
+                            severity="MEDIUM",
+                            title=f"Architect Registration Unverified: License Number Omitted for {arch['name']}",
+                            detail=(
+                                f"Architect '{arch['name']}' is assigned in project records without a Council of Architecture (CoA) "
+                                "registration number in statutory disclosures."
+                            ),
+                            evidence_source=f"professionals table (architect: {arch['name']})",
+                            reconciliation_guidance=(
+                                "Cross-reference with Council of Architecture registry to confirm valid professional standing."
+                            ),
+                        )
+                    )
+
+        engineers = [r for r in prof_rows if r["role"].lower() == "engineer"]
+        if not engineers:
+            leads.append(
+                DiscrepancyLead(
+                    project_id=project_id,
+                    category="statutory",
+                    severity="MEDIUM",
+                    title="No Statutory Engineer Assigned in Project Registration",
+                    detail=(
+                        "Project registration records do not contain a designated structural engineer assignment. "
+                        "Section 4 requires an engineer to certify structural execution via Form 2."
+                    ),
+                    evidence_source="professionals table (role='engineer')",
+                    reconciliation_guidance=(
+                        "Inspect Form 2 filings to confirm whether a licensed structural engineer has certified structural progress."
+                    ),
+                )
+            )
+        else:
+            for eng in engineers:
+                reg_no = eng["license_or_reg_no"]
+                if not reg_no or not str(reg_no).strip():
+                    leads.append(
+                        DiscrepancyLead(
+                            project_id=project_id,
+                            category="statutory",
+                            severity="MEDIUM",
+                            title=f"Engineer Registration Unverified: License Number Omitted for {eng['name']}",
+                            detail=(
+                                f"Engineer '{eng['name']}' is assigned in project records without a municipal or institutional "
+                                "structural license number in statutory disclosures."
+                            ),
+                            evidence_source=f"professionals table (engineer: {eng['name']})",
+                            reconciliation_guidance=(
+                                "Confirm competent authority structural engineering license with municipal corporation or development authority."
+                            ),
+                        )
+                    )
+
         return leads
+
+    def audit_credential_coverage(self, project_id: int) -> Dict[str, Any]:
+        """Audit statutory signer and professional credential coverage matrix for a project."""
+        prow = self.con.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,)).fetchone()
+        if not prow:
+            return {"error": f"Project {project_id} not found"}
+
+        prof_rows = self.con.execute(
+            "SELECT role, name, firm_name, license_or_reg_no FROM professionals WHERE project_id = ?",
+            (project_id,),
+        ).fetchall()
+
+        f3_docs = self.con.execute(
+            "SELECT uid_hash, doc_type, sha256, status FROM documents_catalog WHERE project_id = ? AND doc_type = 'form_three_ca'",
+            (project_id,),
+        ).fetchall()
+
+        fin_rows = self.con.execute(
+            "SELECT incurred_and_paid FROM finances WHERE project_id = ?",
+            (project_id,),
+        ).fetchall()
+
+        has_financial_activity = bool(
+            (prow["incurred_cost_inr"] and prow["incurred_cost_inr"] > 0)
+            or any(r["incurred_and_paid"] for r in fin_rows)
+        )
+
+        architects = [r for r in prof_rows if r["role"].lower() == "architect"]
+        engineers = [r for r in prof_rows if r["role"].lower() == "engineer"]
+
+        arch_verified = [r for r in architects if r["license_or_reg_no"] and str(r["license_or_reg_no"]).strip()]
+        eng_verified = [r for r in engineers if r["license_or_reg_no"] and str(r["license_or_reg_no"]).strip()]
+        f3_verified = [d for d in f3_docs if d["sha256"]]
+
+        gap_codes = []
+        if not architects:
+            gap_codes.append("registration_architect_profile_unassigned")
+        elif len(arch_verified) == 0:
+            gap_codes.append("registration_architect_profile_unverified")
+        elif len(arch_verified) < len(architects):
+            gap_codes.append("architect_has_unresolved_observations")
+
+        if not engineers:
+            gap_codes.append("registration_engineer_profile_unassigned")
+        elif len(eng_verified) == 0:
+            gap_codes.append("registration_engineer_profile_unverified")
+        elif len(eng_verified) < len(engineers):
+            gap_codes.append("engineer_has_unresolved_observations")
+
+        if has_financial_activity and not f3_docs:
+            gap_codes.append("no_linked_signed_form_three_certificate_in_archive")
+
+        return {
+            "project_id": project_id,
+            "has_financial_activity": has_financial_activity,
+            "roles": {
+                "architect": {
+                    "observed_count": len(architects),
+                    "verified_count": len(arch_verified),
+                    "records": [
+                        {"name": a["name"], "firm": a["firm_name"], "license": a["license_or_reg_no"]}
+                        for a in architects
+                    ],
+                },
+                "engineer": {
+                    "observed_count": len(engineers),
+                    "verified_count": len(eng_verified),
+                    "records": [
+                        {"name": e["name"], "firm": e["firm_name"], "license": e["license_or_reg_no"]}
+                        for e in engineers
+                    ],
+                },
+                "ca_certificate": {
+                    "observed_count": len(f3_docs),
+                    "verified_count": len(f3_verified),
+                    "document_hashes": [d["sha256"] for d in f3_docs if d["sha256"]],
+                },
+            },
+            "gap_codes": gap_codes,
+        }
 
     def calculate_escrow_runway(self, project_id: int) -> dict:
         """Calculate quarterly construction spend velocity and estimated escrow cash runway in months."""

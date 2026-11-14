@@ -16,6 +16,7 @@ Relational knowledge-graph engine over the curated SQLite database. `KnowledgeGr
 - `graph_edges` primary key is `(src_id, relation, dst_id)`; both insert helpers use `INSERT OR REPLACE`, so `build_graph()` is idempotent over the same data [network.py:_insert_edge]
 - `trace_contagion_risk` only flags linked projects that have rows in `applications` with `application_type = 'Complaint'`; every lead is emitted with `risk_type = 'PROFESSIONAL_LINKED_COMPLAINT'` and `severity = 'MEDIUM'` [network.py:trace_contagion_risk]
 - Node `kind` values are `Project`, `Promoter`, `Bank`, `PriorProject`, and the capitalized professional role (`Architect`, `Engineer`, `Ca`, `Contractor`) — note the `Ca` casing, which the UI color map also keys on [network.py:build_graph]
+- Node and edge `properties_json` columns store metadata: professional nodes store `role`, `firm_name`, `license_or_reg_no`, and boolean `is_verified`; project nodes store `registration_number` and `district`; bank nodes store `branch_name`; professional edges store `role`, `firm_name`, and `license_or_reg_no` [network.py:build_graph]
 
 ## Side Effects
 - Creates `graph_nodes` / `graph_edges` tables in the passed SQLite connection and commits on construction and after `build_graph()` [network.py:_init_graph_tables]

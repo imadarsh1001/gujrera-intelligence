@@ -94,6 +94,12 @@ Run locally via `python -m real_estate_intelligence.cli serve --port 8765` (or `
 Exposes 13 research tools via `real_estate_intelligence.mcp.server.RealEstateIntelligenceMCP`:
 * `get_project_dossier`, `query_inventory_breakdown`, `predict_pricing_benchmark`, `forecast_completion_delay`, `calculate_escrow_runway`, `get_spatial_density`, `get_escrow_health`, `get_land_records`, `get_regulatory_radar`, `audit_discrepancies`, `search_document_evidence`, `trace_entity_network`, `compare_projects`.
 
+### 7. Statutory Signer & Professional Credential Auditing
+* **Form 3 CA Certificate Statutory Audit**: Verifies presence of signed Form 3 Chartered Accountant withdrawal certificates against reported project expenditures under Section 4(2)(l)(D).
+* **Professional Credential Verification**: Checks statutory registration numbers for assigned architects (Council of Architecture / CoA) and structural engineers (municipal / development authority licensing).
+* **Granular Coverage Matrix & Gap Codes**: `audit_credential_coverage` provides machine-readable observation vs. verified counts and statutory gap codes (`registration_architect_profile_unverified`, `no_linked_signed_form_three_certificate_in_archive`).
+* **Ground-Truth Spatial Research**: Validated by empirical research proving that commercial address geocoding cannot substitute for official GujRERA GPS boundaries. See [`docs/research/GEOCODING_EXPERIMENT_REPORT.md`](../docs/research/GEOCODING_EXPERIMENT_REPORT.md).
+
 ---
 
 ## Installation & Package Management with `uv`

@@ -1,5 +1,6 @@
 """Knowledge Graph engine for cross-entity network analysis and contagion risk tracing."""
 
+import json
 import sqlite3
 from typing import Any, Dict, List, Optional
 
@@ -40,14 +41,19 @@ class KnowledgeGraph:
         for row in cur.fetchall():
             pid = row["project_id"]
             p_node = f"project:{pid}"
-            self._insert_node(p_node, "Project", row["name"])
+            p_props = json.dumps({
+                "registration_number": row["registration_number"],
+                "district": row["district"],
+            })
+            self._insert_node(p_node, "Project", row["name"], properties_json=p_props)
 
         # 2. Promoters
         cur.execute("SELECT promoter_id, name, promoter_type FROM promoters")
         for row in cur.fetchall():
             prom_id = row["promoter_id"]
             prom_node = f"promoter:{prom_id}"
-            self._insert_node(prom_node, "Promoter", row["name"])
+            prom_props = json.dumps({"promoter_type": row["promoter_type"]})
+            self._insert_node(prom_node, "Promoter", row["name"], properties_json=prom_props)
 
         # Edge Project -> DevelopedBy -> Promoter
         cur.execute("SELECT project_id, promoter_id FROM projects")
@@ -55,14 +61,24 @@ class KnowledgeGraph:
             self._insert_edge(f"project:{row['project_id']}", "DEVELOPED_BY", f"promoter:{row['promoter_id']}")
 
         # 3. Professionals
-        cur.execute("SELECT project_id, role, name, firm_name FROM professionals")
+        cur.execute("SELECT project_id, role, name, firm_name, license_or_reg_no FROM professionals")
         for row in cur.fetchall():
             role = row["role"].lower()
             name = row["name"].strip()
+            reg_no = row["license_or_reg_no"]
+            firm = row["firm_name"]
+            is_verified = bool(reg_no and str(reg_no).strip())
+
             # Clean normalized node ID
             norm_name = "".join(c for c in name.lower() if c.isalnum() or c == " ").strip().replace(" ", "_")
             prof_node = f"professional:{role}:{norm_name}"
-            self._insert_node(prof_node, role.capitalize(), name)
+            prof_props = json.dumps({
+                "role": role,
+                "firm_name": firm,
+                "license_or_reg_no": reg_no,
+                "is_verified": is_verified,
+            })
+            self._insert_node(prof_node, role.capitalize(), name, properties_json=prof_props)
 
             rel_name = {
                 "architect": "DESIGNED_BY",
@@ -71,7 +87,12 @@ class KnowledgeGraph:
                 "contractor": "CONSTRUCTED_BY",
             }.get(role, "ASSOCIATED_WITH")
 
-            self._insert_edge(f"project:{row['project_id']}", rel_name, prof_node)
+            edge_props = json.dumps({
+                "role": role,
+                "firm_name": firm,
+                "license_or_reg_no": reg_no,
+            })
+            self._insert_edge(f"project:{row['project_id']}", rel_name, prof_node, properties_json=edge_props)
 
         # 4. Banks
         cur.execute("SELECT project_id, bank_name, branch_name FROM banks")
@@ -80,7 +101,8 @@ class KnowledgeGraph:
             branch = row["branch_name"] or "Main"
             norm_bank = "".join(c for c in bname.lower() if c.isalnum() or c == " ").strip().replace(" ", "_")
             bank_node = f"bank:{norm_bank}"
-            self._insert_node(bank_node, "Bank", bname)
+            bank_props = json.dumps({"branch_name": branch})
+            self._insert_node(bank_node, "Bank", bname, properties_json=bank_props)
             self._insert_edge(f"project:{row['project_id']}", "ESCROW_AT", bank_node)
 
         # 5. Previous Projects — self-links excluded so a project is never its own prior node
@@ -101,16 +123,16 @@ class KnowledgeGraph:
         edges_count = self.con.execute("SELECT COUNT(*) FROM graph_edges").fetchone()[0]
         return {"nodes": nodes_count, "edges": edges_count}
 
-    def _insert_node(self, node_id: str, kind: str, label: str):
+    def _insert_node(self, node_id: str, kind: str, label: str, properties_json: Optional[str] = None):
         self.con.execute(
-            "INSERT OR REPLACE INTO graph_nodes (node_id, kind, label) VALUES (?, ?, ?)",
-            (node_id, kind, label),
+            "INSERT OR REPLACE INTO graph_nodes (node_id, kind, label, properties_json) VALUES (?, ?, ?, ?)",
+            (node_id, kind, label, properties_json),
         )
 
-    def _insert_edge(self, src_id: str, relation: str, dst_id: str):
+    def _insert_edge(self, src_id: str, relation: str, dst_id: str, properties_json: Optional[str] = None):
         self.con.execute(
-            "INSERT OR REPLACE INTO graph_edges (src_id, relation, dst_id) VALUES (?, ?, ?)",
-            (src_id, relation, dst_id),
+            "INSERT OR REPLACE INTO graph_edges (src_id, relation, dst_id, properties_json) VALUES (?, ?, ?, ?)",
+            (src_id, relation, dst_id, properties_json),
         )
 
     def find_shared_entities(self, project_id: int) -> List[Dict[str, Any]]:

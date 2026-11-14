@@ -1,6 +1,9 @@
 """Geospatial (GIS) micro-market analytics and spatial clustering engine.
 
 Operates over project GPS coordinates (latitude, longitude) and Town Planning (TP) schemes.
+For empirical proof of why official GujRERA GPS boundaries cannot be substituted by
+third-party address geocoding (OSM Nominatim / MapTiler), see:
+docs/research/GEOCODING_EXPERIMENT_REPORT.md
 """
 
 import math

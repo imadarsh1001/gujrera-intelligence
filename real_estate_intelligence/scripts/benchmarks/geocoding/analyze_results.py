@@ -1,8 +1,14 @@
 import json
+from pathlib import Path
 import statistics
 
+BENCHMARK_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BENCHMARK_DIR.parents[3]
+RESULTS_FILE = BENCHMARK_DIR / "geocoding_results.json"
+REPORT_OUTPUT = REPO_ROOT / "docs" / "research" / "GEOCODING_EXPERIMENT_REPORT.md"
+
 def generate_report():
-    with open('gujrera_pipeline/experiments/geocoding_results.json', 'r', encoding='utf-8') as f:
+    with open(RESULTS_FILE, 'r', encoding='utf-8') as f:
         results = json.load(f)
 
     test_keys = [
@@ -91,9 +97,10 @@ def generate_report():
         lines.append(f"| {label} | {succ_rate} | {med} | {mean} | {min_e} | {max_e} | {usability} |")
 
     report_content = "\n".join(lines)
-    with open('gujrera_pipeline/experiments/GEOCODING_EXPERIMENT_REPORT.md', 'w', encoding='utf-8') as f:
+    REPORT_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    with open(REPORT_OUTPUT, 'w', encoding='utf-8') as f:
         f.write(report_content)
-    print("Report generated at gujrera_pipeline/experiments/GEOCODING_EXPERIMENT_REPORT.md")
+    print(f"Report generated at {REPORT_OUTPUT}")
 
 if __name__ == '__main__':
     generate_report()
