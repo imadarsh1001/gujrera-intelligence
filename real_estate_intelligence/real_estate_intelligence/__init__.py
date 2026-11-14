@@ -4,6 +4,7 @@ Evidence-backed due-diligence, knowledge graphs, and hybrid RAG for analytical
 buyers, investors, and legal advisors.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +15,10 @@ if str(WORKSPACE_ROOT) not in sys.path:
 
 # Sibling pipeline repo path resolution (parent directory contains package gujrera_pipeline)
 PARENT_DIR = WORKSPACE_ROOT.parent
-if (PARENT_DIR / "gujrera_pipeline").exists() and str(PARENT_DIR) not in sys.path:
-    sys.path.insert(0, str(PARENT_DIR))
+_ENV_PIPELINE = os.getenv("GUJRERA_PIPELINE_DIR")
+_PIPELINE_DIR = Path(_ENV_PIPELINE) if _ENV_PIPELINE else (PARENT_DIR / "gujrera_pipeline")
+
+if _PIPELINE_DIR.exists() and str(_PIPELINE_DIR) not in sys.path:
+    sys.path.insert(0, str(_PIPELINE_DIR))
 
 __version__ = "0.1.0"

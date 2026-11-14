@@ -13,8 +13,11 @@ if str(WORKSPACE_ROOT) not in sys.path:
 
 # Sibling pipeline repo path resolution
 PARENT_DIR = WORKSPACE_ROOT.parent
-if (PARENT_DIR / "gujrera_pipeline").exists() and str(PARENT_DIR) not in sys.path:
-    sys.path.insert(0, str(PARENT_DIR))
+_ENV_PIPELINE = os.getenv("GUJRERA_PIPELINE_DIR")
+_PIPELINE_DIR = Path(_ENV_PIPELINE) if _ENV_PIPELINE else (PARENT_DIR / "gujrera_pipeline")
+
+if _PIPELINE_DIR.exists() and str(_PIPELINE_DIR) not in sys.path:
+    sys.path.insert(0, str(_PIPELINE_DIR))
 
 
 def _load_env_file() -> None:
@@ -40,10 +43,17 @@ def _load_env_file() -> None:
 _load_env_file()
 
 # Default source run containing raw JSON snapshots and binary documents
-# Resolves to sibling gujrera_pipeline repo if present, fallback to nested folder
-_SIBLING_SOURCE_RUN = WORKSPACE_ROOT.parent / "gujrera_pipeline" / "data" / "runs" / "nine_projects_2026_10_15"
+# Resolves to environment override, sibling gujrera_pipeline repo, or nested folder
+_ENV_SOURCE_RUN = os.getenv("GUJRERA_SOURCE_RUN")
+_SIBLING_SOURCE_RUN = _PIPELINE_DIR / "data" / "runs" / "nine_projects_2026_10_15"
 _NESTED_SOURCE_RUN = WORKSPACE_ROOT / "gujrera_pipeline" / "data" / "runs" / "nine_projects_2026_10_15"
-DEFAULT_SOURCE_RUN = _SIBLING_SOURCE_RUN if _SIBLING_SOURCE_RUN.exists() else _NESTED_SOURCE_RUN
+
+if _ENV_SOURCE_RUN:
+    DEFAULT_SOURCE_RUN = Path(_ENV_SOURCE_RUN)
+elif _SIBLING_SOURCE_RUN.exists():
+    DEFAULT_SOURCE_RUN = _SIBLING_SOURCE_RUN
+else:
+    DEFAULT_SOURCE_RUN = _NESTED_SOURCE_RUN
 
 # Local intelligence working directory for curated SQLite DB and derived indices
 DEFAULT_DATA_DIR = PACKAGE_ROOT / "data"

@@ -17,8 +17,8 @@ To guarantee institutional privacy while maintaining open-source transparency, t
 
 | Repository | Scope & Access | Key Responsibilities |
 |---|---|---|
-| **`gujrera-intelligence`** | **Public** | Quantitative ML (Hedonic GBDT + TreeSHAP), Cox survival delivery forecasting, 14-table relational SQLite fact base, Vis.js knowledge graph, interactive Chart.js analytics UI, Diligence Copilot, and 13-tool Model Context Protocol (MCP) server. |
-| **`gujrera-pipeline`** | **Private** | Resumable ingestion engine, authenticated curl transport, rate limiters, catalog schemas, and raw document/JSON harvesters. Raw scraped data and scraping blueprints remain strictly private. |
+| **`gujrera-intelligence`** | **Public** | Quantitative ML (Hedonic GBDT + TreeSHAP), Cox survival delivery forecasting, 15-table relational SQLite fact base, Vis.js knowledge graph, interactive Chart.js analytics UI, Diligence Copilot, and 13-tool Model Context Protocol (MCP) server. |
+| **`gujrera-pipeline`** | **Private (Sibling)** | High-throughput Scrapy crawler, Parquet lake partitioner, immutable SHA-256 run archives, dynamic Form ID discovery, and RunReader seam (ADR-0004). Lives in sibling repository `../gujrera_pipeline`. |
 
 ### Architectural Boundary (`RunReader` Seam)
 The public intelligence tier never invokes raw scrapers directly. Instead, it reads through the self-contained `RunReader` protocol boundary (`real_estate_intelligence/db/reader.py` / ADR-0001). This guarantees that the public intelligence application runs 100% standalone without requiring the private pipeline or network access.
@@ -32,43 +32,42 @@ Or via PowerShell:
 ```powershell
 .\push_all.ps1 -msg "feat: update copilot argument safety and docs"
 ```
-This automatically inspects, stages, commits, and pushes changes to both `origin` remotes (`imadarsh1001/gujrera-intelligence` and `imadarsh1001/gujrera-pipeline`).
+This automatically inspects, stages, commits, and pushes changes to both `origin` remotes (`imadarsh1001/gujrera-intelligence` and sibling `imadarsh1001/gujrera-pipeline`).
 
 ---
 
 ## Repository Structure
 
 ```
-gujRERA/
-├── gujrera_pipeline/         # [ACTIVE] Producer Tier: Ingestion pipeline, curl transport, manifests & RunReader
-│   ├── client.py             # Authenticated transport & rate-limiter
-│   ├── collector.py          # Atomic, resumable endpoint harvester
-│   ├── documents.py          # PDF document downloader & SHA-256 deduplicator
-│   ├── reader.py             # RunReader & ProjectSnapshot abstraction (ADR-0001)
-│   ├── catalog.py            # Complete GujRERA API endpoint schema catalog
-│   ├── data/runs/            # Curated local runs (including nine_projects_2026_10_15)
-│   └── tests/                # Automated pipeline test suite
-│
+gujRERA/ (Public Analysis & Intelligence Platform)
 ├── real_estate_intelligence/ # [ACTIVE] Consumer Tier: Relational SQLite DB, FTS, graph, analytics & UI
 │   ├── analytics/            # Discrepancy audits, pricing benchmarks, survival model, hedonic ML, dossiers
-│   ├── db/                   # Database connection, 14-table schema, FTS5 engine, RunReader loader
+│   ├── db/                   # Database connection, 15-table schema, FTS5 engine, RunReader loader
 │   ├── documents/            # PDF classification, text extraction, FTS search
 │   ├── graph/                # Cross-project professional & promoter network knowledge graph
 │   ├── mcp/                  # Model Context Protocol (MCP) server for AI research agents
 │   ├── ui/                   # Web dashboard with Chart.js analytics & AI Diligence Copilot
 │   ├── cli.py                # Unified CLI interface
+│   ├── staging_from_pipeline/# Isolated candidate consumer modules from gujrera_pipeline (ADR-0004)
 │   └── tests/                # Platform test suite & automated evaluation benchmark harness
 │
 ├── docs/                     # Architectural Decision Records (ADRs) & technical specs
-│   ├── adr/
-│   │   └── 0001-run-reader-ingestion-seam.md
+│   ├── adr/                  # 0001-run-reader-ingestion-seam.md, 0002-columnar-parquet...
 │   └── SPEC.md               # End-to-end platform specification & 52 user stories
 │
 ├── GLOSSARY.md               # Canonical domain vocabulary & regulatory definitions
 ├── SHOWCASE.md               # Comprehensive institutional showcase & technical report
-│
-├── collected_data/           # Master statewide index (17,634 projects) & reference datasets
-└── legacy/                   # Archived historical systems & prototypes (Read-Only)
+├── EGM.md                    # Explicit Architecture Blueprint & Subdirectory Contracts
+├── push_all.bat / .ps1       # Dual-repo synchronization scripts (pushes . and ../gujrera_pipeline)
+└── run_server.py             # Dashboard server launcher (127.0.0.1:8765)
+
+../gujrera_pipeline/ (Sibling Private Ingestion Engine)
+├── crawler/                  # Production Scrapy crawler (gujrera_spider.py) & Parquet partitioner
+├── core/                     # Core RunStore (manifest.sqlite), models, catalog, and core.reader
+├── legacy_collector/         # Isolated curl-based collector tools
+├── scripts/                  # Unified inspect_filings.py CLI and archive tools
+├── staging_from_intelligence/# Consolidated historical crawlers, EDA prototypes, raw CSVs & docs
+└── tests/                    # Pipeline verification test suite
 ```
 
 ---
