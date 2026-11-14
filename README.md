@@ -45,7 +45,7 @@ gujRERA/ (Public Analysis & Intelligence Platform)
 │   ├── mcp/                  # Model Context Protocol (MCP) server for AI research agents
 │   ├── ui/                   # Web dashboard with Chart.js analytics & AI Diligence Copilot
 │   ├── cli.py                # Unified CLI interface
-│   ├── staging_from_pipeline/# Isolated candidate consumer modules from gujrera_pipeline (ADR-0004)
+│   ├── scripts/              # Operational utilities & empirical geocoding benchmarks
 │   └── tests/                # Platform test suite & automated evaluation benchmark harness
 │
 ├── docs/                     # Architectural Decision Records (ADRs) & technical specs

@@ -27,7 +27,6 @@ Root-level files:
 ## Subdirectories & System Boundaries
 
 - `real_estate_intelligence/`: [./real_estate_intelligence/EGM.md](./real_estate_intelligence/EGM.md) - public-repo analysis platform: curated SQLite schema, FTS document search, knowledge graph, seven read-only analytics engines, MCP tool class, LLM copilot agent, stdlib HTTP UI, operational scripts
-- `staging_from_pipeline/`: isolated staging folder for candidate consumer modules migrated from `gujrera_pipeline` per ADR-0004; deferred for dedicated review
 - `docs/`: documentation-only, no code contracts
 - `../gujrera_pipeline/`: separate **private repository** (`gujrera-pipeline` on GitHub) - collection pipeline: rate-limited fetch layer, immutable hash-verified run archives, ZSTD Parquet lakes, dossiers, offline readers; legacy crawler/data captures migrated to `../gujrera_pipeline/staging_from_intelligence/`
 
