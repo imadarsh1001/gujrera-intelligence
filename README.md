@@ -23,16 +23,13 @@ To guarantee institutional privacy while maintaining open-source transparency, t
 ### Architectural Boundary (`RunReader` Seam)
 The public intelligence tier never invokes raw scrapers directly. Instead, it reads through the self-contained `RunReader` protocol boundary (`real_estate_intelligence/db/reader.py` / ADR-0001). This guarantees that the public intelligence application runs 100% standalone without requiring the private pipeline or network access.
 
-### 1-Click Multi-Repo Synchronization (`push_all.bat`)
-To eliminate Git friction and keep both repositories synchronized with atomic commit messages:
-```cmd
-push_all.bat "feat: update copilot argument safety and docs"
+### Repository Workflow & Contributing
+Each repository is completely sovereign and follows standard Git workflows. To commit and push changes:
+```bash
+git add <files>
+git commit -m "feat/fix: descriptive message"
+git push origin <branch>
 ```
-Or via PowerShell:
-```powershell
-.\push_all.ps1 -msg "feat: update copilot argument safety and docs"
-```
-This automatically inspects, stages, commits, and pushes changes to both `origin` remotes (`imadarsh1001/gujrera-intelligence` and sibling `imadarsh1001/gujrera-pipeline`).
 
 ---
 
@@ -58,7 +55,6 @@ gujRERA/ (Public Analysis & Intelligence Platform)
 ├── GLOSSARY.md               # Canonical domain vocabulary & regulatory definitions
 ├── SHOWCASE.md               # Comprehensive institutional showcase & technical report
 ├── EGM.md                    # Explicit Architecture Blueprint & Subdirectory Contracts
-├── push_all.bat / .ps1       # Dual-repo synchronization scripts (pushes . and ../gujrera_pipeline)
 └── run_server.py             # Dashboard server launcher (127.0.0.1:8765)
 
 ../gujrera_pipeline/ (Sibling Private Ingestion Engine)

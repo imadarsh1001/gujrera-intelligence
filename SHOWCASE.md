@@ -330,8 +330,7 @@ flowchart LR
 ```
 
 - **Public Repository (`imadarsh1001/gujrera-intelligence`)**: Contains the intelligence platform, analytical engines, documentation, test suites, and UI. Never contains raw scraped filings, un-redacted personal data, or network scraping internals.
-- **Private Repository (`imadarsh1001/gujrera-pipeline`)**: Isolated subfolder managing statutory endpoint harvesting, rate-limiting, and raw response storage. Raw data directories are ignored in `.gitignore`.
-- **Multi-Repo Synchronization**: Managed seamlessly via `push_all.bat` (or `push_all.ps1`), which stages and pushes changes to both remotes in one step.
+- **Private Repository (`imadarsh1001/gujrera-pipeline`)**: Sibling repository managing statutory endpoint harvesting, rate-limiting, and Parquet data lakes. Raw data directories are ignored in `.gitignore`.
 
 ---
 

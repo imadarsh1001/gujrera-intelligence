@@ -21,9 +21,7 @@ Root-level files:
 ## Local Interface & Invariants
 
 - `run_server.py` - launcher: inserts the sibling `real_estate_intelligence` package root into `sys.path`, then calls `cli.main()`; with no arguments it rewrites `sys.argv` to `serve --port 8765` [run_server.py:main]
-- `push_all.bat` / `push_all.ps1` - dual-repo sync helpers: `git add .` + conditional commit + `git push origin main` in the outer repo, then the same inside `..\gujrera_pipeline` [push_all.bat:sync sections], [push_all.ps1:Push-Location block]
-  - Invariant: both scripts are branch-safe: they `git fetch origin` first, abort when the checked-out branch is not `main` (unless `-AllowNonMain` / `--allow-non-main` is passed), push `git push origin HEAD:main`, abort on a non-fast-forward (`origin/main` ahead of local), and print success only after `ls-remote` confirms the remote ref matches local HEAD; the two pushes are independent and never auto-retried
-- Invariant: no Python source lives at the workspace root other than `run_server.py`; all code lives in the repo trees documented below
+- Invariant: no Python source or synchronization wrapper scripts live at the workspace root other than `run_server.py`; all platform code lives in `real_estate_intelligence/`
 - Side effect: `run_server.py` starts the local dashboard server (TCP bind on `127.0.0.1:{port}`, default 8765)
 
 ## Subdirectories & System Boundaries
@@ -35,7 +33,7 @@ Root-level files:
 
 ## Global Invariants
 
-- **Dual-repo boundary**: the private pipeline and public platform are separate git repositories; `push_all.bat`/`push_all.ps1` synchronize both repos to their respective `origin main` (ADR-0004)
+- **Dual-repo boundary**: the private pipeline and public platform are sovereign, decoupled git repositories (ADR-0004); each is version-controlled and pushed independently using standard Git commands
 - **Run-archive seam**: pipeline runs are immutable and SHA-256 hash-verified (gzip written via `.part` + `os.replace`); the read side opens `manifest.sqlite` strictly `mode=ro` and raises `FileNotFoundError` when absent [storage.py:write_json], [export.py:verify], [reader.py:DiskRunReader]
 - **Cross-repo source seam**: `real_estate_intelligence/config.py` and `__init__.py` resolve `_PIPELINE_DIR` via `GUJRERA_PIPELINE_DIR` env var or `WORKSPACE_ROOT.parent / "gujrera_pipeline"`; `DEFAULT_SOURCE_RUN` resolves via `GUJRERA_SOURCE_RUN` env var or `_PIPELINE_DIR/data/runs/nine_projects_2026_10_15` [config.py]
 - **Privacy redaction in code**: both pipeline generations exclude identity documents (`pancard`, `photograph`, `aadhar/aadhaar`, `kyc`, `passport`), booking/photos/promoter endpoints, and fixed redacted export field lists [export.py:FIELDS], [documents.py:EXCLUDED_PATH_TERMS], [download_project_documents.py:IDENTITY_TERMS]
