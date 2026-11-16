@@ -117,6 +117,11 @@ class TestUIServerEndpoints(unittest.TestCase):
         self.assertIn("shapWaterfallChart", text)
         self.assertIn("priceTrajectoryChart", text)
         self.assertIn("copilotDrawer", text)
+        self.assertIn("kpiEscrowRunway", text)
+        self.assertIn("cardGovernanceCredentials", text)
+        self.assertIn("badgeArchitectStatus", text)
+        self.assertIn("badgeEngineerStatus", text)
+        self.assertIn("badgeForm3CAStatus", text)
 
     def test_api_projects(self):
         code, body = self._make_get_request("/api/projects")
@@ -308,6 +313,27 @@ class TestUIServerEndpoints(unittest.TestCase):
         self.assertIsInstance(data["revision_evidence_dates"], list)
         self.assertIsInstance(data["revision_actioned_dates"], list)
         self.assertGreaterEqual(data["filings_count"], 1)
+
+    def test_project_endpoint_credential_and_runway_keys(self):
+        code, body = self._make_get_request("/api/project/13560")
+        self.assertEqual(code, 200)
+        data = json.loads(body.decode("utf-8"))
+        self.assertIn("credential_coverage", data)
+        self.assertIn("escrow_runway", data)
+
+        cov = data["credential_coverage"]
+        self.assertEqual(cov["project_id"], 13560)
+        self.assertIn("roles", cov)
+        self.assertIn("architect", cov["roles"])
+        self.assertIn("engineer", cov["roles"])
+        self.assertIn("ca_certificate", cov["roles"])
+        self.assertIsInstance(cov["gap_codes"], list)
+
+        runway = data["escrow_runway"]
+        self.assertEqual(runway["project_id"], 13560)
+        self.assertIn("closing_escrow_balance_inr", runway)
+        self.assertIn("monthly_construction_burn_inr", runway)
+        self.assertIn("insolvency_risk", runway)
 
     def test_search_invalid_project_id_returns_400(self):
         code, _ = self._make_get_request("/api/search?query=encumbrance&project_id=abc")

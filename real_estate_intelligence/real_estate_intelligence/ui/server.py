@@ -261,6 +261,8 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
                 "revision_actioned_dates": sorted(
                     dt.date().isoformat() for dt in (_parse_timestamp(r["approval_date"]) for r in ext_rows) if dt
                 ),
+                "credential_coverage": self.auditor.audit_credential_coverage(pid),
+                "escrow_runway": self.auditor.calculate_escrow_runway(pid),
             })
             return
 

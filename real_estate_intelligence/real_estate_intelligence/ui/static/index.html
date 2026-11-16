@@ -78,7 +78,7 @@
                         </a>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-100 text-center">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-100 text-center">
                     <div>
                         <span class="text-[11px] text-slate-500 font-medium">Absorption</span>
                         <p id="kpiBooking" class="text-base font-bold text-blue-600 kpi-value">--%</p>
@@ -94,6 +94,10 @@
                     <div>
                         <span class="text-[11px] text-slate-500 font-medium">Escrow Liquidity</span>
                         <p id="kpiEscrowBal" class="text-base font-bold text-slate-800 kpi-value">--</p>
+                    </div>
+                    <div>
+                        <span class="text-[11px] text-slate-500 font-medium">Escrow Runway</span>
+                        <p id="kpiEscrowRunway" class="text-base font-bold text-slate-800 kpi-value">--</p>
                     </div>
                     <div>
                         <span class="text-[11px] text-slate-500 font-medium">RERA Deadline</span>
@@ -263,6 +267,29 @@
                             <span id="escrowStatusTag" class="text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-blue-100 text-blue-800">Account Type 1</span>
                         </div>
                         <div id="escrowBankDetails" class="text-slate-600 space-y-1">--</div>
+                    </div>
+
+                    <!-- Statutory Professional Credentials Card -->
+                    <div class="mt-3 pt-3 border-t border-slate-100 bg-slate-50 p-3 rounded-lg text-xs space-y-2" id="cardGovernanceCredentials">
+                        <div class="font-bold text-slate-700 flex items-center justify-between">
+                            <span><i class="fa-solid fa-certificate text-indigo-600 mr-1.5"></i> Statutory Signer Credentials</span>
+                            <span id="badgeGovernanceSummary" class="text-[10px] px-1.5 py-0.5 rounded font-bold bg-slate-200 text-slate-700">Governance</span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
+                            <div class="p-2 rounded bg-white border border-slate-200 flex flex-col justify-between">
+                                <span class="text-slate-500 text-[10px] uppercase font-semibold">Architect</span>
+                                <span id="badgeArchitectStatus" class="font-bold text-slate-800 mt-0.5">--</span>
+                            </div>
+                            <div class="p-2 rounded bg-white border border-slate-200 flex flex-col justify-between">
+                                <span class="text-slate-500 text-[10px] uppercase font-semibold">Structural Engineer</span>
+                                <span id="badgeEngineerStatus" class="font-bold text-slate-800 mt-0.5">--</span>
+                            </div>
+                            <div class="p-2 rounded bg-white border border-slate-200 flex flex-col justify-between">
+                                <span class="text-slate-500 text-[10px] uppercase font-semibold">Form 3 CA Certificate</span>
+                                <span id="badgeForm3CAStatus" class="font-bold text-slate-800 mt-0.5">--</span>
+                            </div>
+                        </div>
+                        <div id="containerCredentialGaps" class="text-[11px] text-amber-800 bg-amber-50 p-2 rounded border border-amber-200 mt-1 hidden"></div>
                     </div>
                 </div>
 
@@ -1003,6 +1030,31 @@
             const escrowAcc = data.banks.find(b => b.account_type === 1) || {};
             document.getElementById('kpiEscrowBal').textContent = escrowAcc.closing_bal !== undefined && escrowAcc.closing_bal !== null ? `₹${(escrowAcc.closing_bal/100000).toFixed(1)} L` : '--';
 
+            // Escrow Runway KPI
+            const runwayEl = document.getElementById('kpiEscrowRunway');
+            if (runwayEl && data.escrow_runway) {
+                const rw = data.escrow_runway;
+                if (rw.estimated_runway_months !== null && rw.estimated_runway_months !== undefined) {
+                    const months = rw.estimated_runway_months >= 999 ? '∞ (Complete)' : `${rw.estimated_runway_months} mo`;
+                    runwayEl.textContent = months;
+                    if (rw.insolvency_risk === 'CRITICAL') {
+                        runwayEl.className = 'text-base font-bold text-rose-600 kpi-value';
+                    } else if (rw.insolvency_risk === 'MODERATE') {
+                        runwayEl.className = 'text-base font-bold text-amber-600 kpi-value';
+                    } else {
+                        runwayEl.className = 'text-base font-bold text-emerald-600 kpi-value';
+                    }
+                    runwayEl.title = `Monthly Burn: ₹${(rw.monthly_construction_burn_inr || 0).toLocaleString('en-IN')} | Insolvency Risk: ${rw.insolvency_risk}`;
+                } else {
+                    runwayEl.textContent = '--';
+                    runwayEl.className = 'text-base font-bold text-slate-800 kpi-value';
+                    runwayEl.title = 'Insufficient historical expenditure to compute burn rate';
+                }
+            } else if (runwayEl) {
+                runwayEl.textContent = '--';
+                runwayEl.className = 'text-base font-bold text-slate-800 kpi-value';
+            }
+
             // Quadrant 1
             const fin = data.finances[data.finances.length - 1] || {};
             document.getElementById('q1Consideration').textContent = formatINR(fin.booked_consideration);
@@ -1022,6 +1074,89 @@
                 `;
             } else {
                 escrowDiv.innerHTML = '<span>No designated 70% retention account details disclosed in snapshot.</span>';
+            }
+
+            // Statutory Governance & Credentials (Quadrant 1)
+            const cov = data.credential_coverage;
+            if (cov && cov.roles) {
+                const arch = cov.roles.architect || {};
+                const eng = cov.roles.engineer || {};
+                const ca = cov.roles.ca_certificate || {};
+
+                // Architect status badge
+                const bArch = document.getElementById('badgeArchitectStatus');
+                if (bArch) {
+                    if (arch.verified_count > 0) {
+                        bArch.className = 'font-bold text-emerald-700 mt-0.5 flex items-center gap-1';
+                        bArch.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-600"></i> Verified';
+                        bArch.title = arch.records && arch.records[0] ? `${arch.records[0].name} (${arch.records[0].license})` : 'Verified';
+                    } else if (arch.observed_count > 0) {
+                        bArch.className = 'font-bold text-amber-700 mt-0.5 flex items-center gap-1';
+                        bArch.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-amber-600"></i> Unverified Reg';
+                        bArch.title = arch.records && arch.records[0] ? `${arch.records[0].name} (No license disclosed)` : 'Unverified';
+                    } else {
+                        bArch.className = 'font-bold text-rose-700 mt-0.5 flex items-center gap-1';
+                        bArch.innerHTML = '<i class="fa-solid fa-circle-xmark text-rose-600"></i> Unassigned';
+                        bArch.title = 'No statutory architect assigned';
+                    }
+                }
+
+                // Structural Engineer status badge
+                const bEng = document.getElementById('badgeEngineerStatus');
+                if (bEng) {
+                    if (eng.verified_count > 0) {
+                        bEng.className = 'font-bold text-emerald-700 mt-0.5 flex items-center gap-1';
+                        bEng.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-600"></i> Verified';
+                        bEng.title = eng.records && eng.records[0] ? `${eng.records[0].name} (${eng.records[0].license})` : 'Verified';
+                    } else if (eng.observed_count > 0) {
+                        bEng.className = 'font-bold text-amber-700 mt-0.5 flex items-center gap-1';
+                        bEng.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-amber-600"></i> Unverified Reg';
+                        bEng.title = eng.records && eng.records[0] ? `${eng.records[0].name} (No license disclosed)` : 'Unverified';
+                    } else {
+                        bEng.className = 'font-bold text-rose-700 mt-0.5 flex items-center gap-1';
+                        bEng.innerHTML = '<i class="fa-solid fa-circle-xmark text-rose-600"></i> Unassigned';
+                        bEng.title = 'No statutory engineer assigned';
+                    }
+                }
+
+                // Form 3 CA status badge
+                const bCA = document.getElementById('badgeForm3CAStatus');
+                if (bCA) {
+                    if (ca.verified_count > 0) {
+                        bCA.className = 'font-bold text-emerald-700 mt-0.5 flex items-center gap-1';
+                        bCA.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i> On File (${ca.verified_count})`;
+                        bCA.title = `${ca.verified_count} signed Form 3 CA certificate(s) cataloged`;
+                    } else if (cov.has_financial_activity) {
+                        bCA.className = 'font-bold text-rose-700 mt-0.5 flex items-center gap-1';
+                        bCA.innerHTML = '<i class="fa-solid fa-circle-xmark text-rose-600"></i> Missing on Spend';
+                        bCA.title = 'Project has incurred expenditure but no Form 3 CA certificate in catalog';
+                    } else {
+                        bCA.className = 'font-bold text-slate-500 mt-0.5 flex items-center gap-1';
+                        bCA.innerHTML = '<i class="fa-solid fa-minus text-slate-400"></i> Not Required';
+                        bCA.title = 'No reported expenditures yet';
+                    }
+                }
+
+                // Summary tag & Gaps container
+                const summaryTag = document.getElementById('badgeGovernanceSummary');
+                const gapsContainer = document.getElementById('containerCredentialGaps');
+                if (gapsContainer) {
+                    if (cov.gap_codes && cov.gap_codes.length > 0) {
+                        if (summaryTag) {
+                            summaryTag.className = 'text-[10px] px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-800';
+                            summaryTag.textContent = `${cov.gap_codes.length} Actionable Gap(s)`;
+                        }
+                        gapsContainer.className = 'text-[11px] text-amber-800 bg-amber-50 p-2 rounded border border-amber-200 mt-1 space-y-0.5';
+                        gapsContainer.innerHTML = '<b>Statutory Observations:</b><br>' + cov.gap_codes.map(c => `• <code class="font-mono text-[10px]">${esc(c)}</code>`).join('<br>');
+                    } else {
+                        if (summaryTag) {
+                            summaryTag.className = 'text-[10px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800';
+                            summaryTag.textContent = 'Compliant';
+                        }
+                        gapsContainer.className = 'hidden';
+                        gapsContainer.innerHTML = '';
+                    }
+                }
             }
 
             // Quadrant 2 Velocity & Timeline
