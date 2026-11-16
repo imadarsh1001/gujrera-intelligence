@@ -940,8 +940,8 @@
             } catch (e) { mapProxy = false; }
             // The table must never wait on the map: rows render as soon as they land,
             // and the map (slower to initialize) fills in its pins when ready.
-            fetchJSON('/api/explore').then(rows => {
-                exploreRows = rows;
+            fetchJSON('/api/explore').then(data => {
+                exploreRows = Array.isArray(data) ? data : (data && data.items ? data.items : []);
                 if (!Array.isArray(exploreRows)) throw new Error('unexpected response');
                 // populate the district filter with project counts
                 const sel = document.getElementById('flDistrict');

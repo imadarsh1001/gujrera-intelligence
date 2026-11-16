@@ -192,3 +192,85 @@ class KnowledgeGraph:
                 })
 
         return contagion_leads
+
+    def get_ego_network(
+        self,
+        project_id: int,
+        depth: int = 2,
+        max_nodes: int = 250,
+    ) -> Dict[str, Any]:
+        """Compute the bounded 1st and 2nd degree ego-network for a given project.
+
+        Returns Vis.js compatible nodes and edges dictionaries.
+        """
+        root_id = f"project:{project_id}"
+        cur = self.con.cursor()
+
+        visited_nodes = {root_id}
+        frontier = {root_id}
+        collected_edges: List[Dict[str, Any]] = []
+
+        for _ in range(depth):
+            if not frontier or len(visited_nodes) >= max_nodes:
+                break
+            placeholders = ",".join("?" for _ in frontier)
+            frontier_list = list(frontier)
+            query = f"""
+                SELECT src_id, relation, dst_id 
+                FROM graph_edges 
+                WHERE src_id IN ({placeholders}) OR dst_id IN ({placeholders})
+            """
+            cur.execute(query, frontier_list + frontier_list)
+            rows = cur.fetchall()
+
+            next_frontier = set()
+            for r in rows:
+                src, dst = r["src_id"], r["dst_id"]
+                collected_edges.append({
+                    "from": src,
+                    "to": dst,
+                    "label": r["relation"],
+                    "color": {"color": "#94a3b8", "highlight": "#2563eb"}
+                })
+                for nid in (src, dst):
+                    if nid not in visited_nodes:
+                        if len(visited_nodes) < max_nodes:
+                            visited_nodes.add(nid)
+                            next_frontier.add(nid)
+
+            frontier = next_frontier
+
+        seen_edges = set()
+        final_edges = []
+        for e in collected_edges:
+            if e["from"] in visited_nodes and e["to"] in visited_nodes:
+                edge_key = (e["from"], e["label"], e["to"])
+                if edge_key not in seen_edges:
+                    seen_edges.add(edge_key)
+                    final_edges.append(e)
+
+        color_map = {
+            "Project": "#2563eb",
+            "Promoter": "#7c3aed",
+            "Engineer": "#d97706",
+            "Architect": "#0d9488",
+            "Ca": "#059669",
+            "Bank": "#e11d48",
+            "PriorProject": "#64748b"
+        }
+        placeholders = ",".join("?" for _ in visited_nodes)
+        cur.execute(
+            f"SELECT node_id, kind, label FROM graph_nodes WHERE node_id IN ({placeholders})",
+            list(visited_nodes)
+        )
+        nodes = [
+            {
+                "id": r["node_id"],
+                "label": r["label"],
+                "group": r["kind"],
+                "color": color_map.get(r["kind"], "#3b82f6")
+            }
+            for r in cur.fetchall()
+        ]
+
+        return {"nodes": nodes, "edges": final_edges}

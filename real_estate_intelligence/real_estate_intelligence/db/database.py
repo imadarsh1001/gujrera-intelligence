@@ -158,6 +158,7 @@ def init_schema(con: sqlite3.Connection) -> None:
             loan_rows_count INTEGER DEFAULT 0,
             FOREIGN KEY (project_id) REFERENCES projects(project_id)
         );
+        CREATE INDEX IF NOT EXISTS idx_fin_proj_date ON finances(project_id, filing_date);
 
         CREATE TABLE IF NOT EXISTS form5_compliance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -201,6 +202,7 @@ def init_schema(con: sqlite3.Connection) -> None:
             final_status TEXT,
             FOREIGN KEY (project_id) REFERENCES projects(project_id)
         );
+        CREATE INDEX IF NOT EXISTS idx_app_proj_type ON applications(project_id, application_type);
 
         CREATE TABLE IF NOT EXISTS documents_catalog (
             uid_hash TEXT PRIMARY KEY,
@@ -235,6 +237,7 @@ def init_schema(con: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_unit_proj ON unit_transactions(project_id);
         CREATE INDEX IF NOT EXISTS idx_unit_block ON unit_transactions(project_id, block_name);
         CREATE INDEX IF NOT EXISTS idx_unit_status ON unit_transactions(project_id, status);
+        CREATE INDEX IF NOT EXISTS idx_unit_status_rates ON unit_transactions(project_id, status, unit_consideration, rate_per_sqft);
 
         -- Asynchronous Heavy Document Processing Queue
         CREATE TABLE IF NOT EXISTS document_jobs (

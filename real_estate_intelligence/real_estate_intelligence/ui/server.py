@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import threading
+from collections import defaultdict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -185,7 +186,24 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/explore":
-            self._send_json(self._explore_rows())
+            rows = self._explore_rows()
+            limit_val = query.get("limit", [None])[0]
+            if limit_val is not None:
+                try:
+                    limit = max(1, min(int(limit_val), 500))
+                    offset = max(0, int(query.get("offset", [0])[0]))
+                    total_count = len(rows)
+                    self._send_json({
+                        "total_count": total_count,
+                        "filtered_count": total_count,
+                        "limit": limit,
+                        "offset": offset,
+                        "items": rows[offset : offset + limit]
+                    })
+                    return
+                except ValueError:
+                    pass
+            self._send_json(rows)
             return
 
         if path == "/api/map/config":
@@ -267,9 +285,21 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/graph":
-            # Return nodes and edges formatted for Vis.js
+            # Return nodes and edges formatted for Vis.js (scoped to project ego-network if requested)
+            pid_val = query.get("project_id", [None])[0]
+            if pid_val:
+                try:
+                    pid = int(pid_val)
+                    if pid > 0:
+                        depth_val = int(query.get("depth", [2])[0])
+                        ego = self.graph_engine.get_ego_network(pid, depth=depth_val)
+                        self._send_json(ego)
+                        return
+                except ValueError:
+                    pass
+
             cur = self.con.cursor()
-            cur.execute("SELECT node_id, kind, label FROM graph_nodes")
+            cur.execute("SELECT node_id, kind, label FROM graph_nodes LIMIT 250")
             color_map = {
                 "Project": "#2563eb",
                 "Promoter": "#7c3aed",
@@ -288,6 +318,7 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
                 }
                 for r in cur.fetchall()
             ]
+            node_ids = {n["id"] for n in nodes}
 
             cur.execute("SELECT src_id, relation, dst_id FROM graph_edges")
             edges = [
@@ -298,6 +329,7 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
                     "color": {"color": "#94a3b8", "highlight": "#2563eb"}
                 }
                 for r in cur.fetchall()
+                if r["src_id"] in node_ids and r["dst_id"] in node_ids
             ]
 
             self._send_json({"nodes": nodes, "edges": edges})
@@ -485,30 +517,50 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
         revision_state: 'revision_observed' | 'no_revision_observed' | 'insufficient_history'.
         """
         projects = [dict(r) for r in self.con.execute("SELECT * FROM projects ORDER BY project_id").fetchall()]
+        if not projects:
+            return []
+
         now_utc = datetime.now(timezone.utc)
+
+        # Bulk pre-fetch child records in 4 indexed queries (O(1) database roundtrips)
+        filings_by_pid: Dict[int, List[str]] = defaultdict(list)
+        for r in self.con.execute(
+            "SELECT project_id, filing_date FROM finances WHERE filing_date IS NOT NULL ORDER BY filing_date"
+        ).fetchall():
+            filings_by_pid[r["project_id"]].append(str(r["filing_date"]))
+
+        ext_rows_by_pid: Dict[int, List[Any]] = defaultdict(list)
+        for r in self.con.execute(
+            "SELECT project_id, apply_date FROM applications WHERE application_type = 'Extension'"
+        ).fetchall():
+            ext_rows_by_pid[r["project_id"]].append(r["apply_date"])
+
+        booked_by_pid: Dict[int, List[Any]] = defaultdict(list)
+        for r in self.con.execute(
+            "SELECT project_id, unit_type, unit_consideration, rate_per_sqft, agreement_date "
+            "FROM unit_transactions WHERE status = 'BOOKED'"
+        ).fetchall():
+            booked_by_pid[r["project_id"]].append(r)
+
+        archs_by_pid: Dict[int, List[str]] = defaultdict(list)
+        for r in self.con.execute(
+            "SELECT project_id, name FROM professionals WHERE role = 'architect' AND name IS NOT NULL AND name != '' ORDER BY name"
+        ).fetchall():
+            archs_by_pid[r["project_id"]].append(r["name"])
+
         rows: List[Dict[str, Any]] = []
         for p in projects:
             pid = p["project_id"]
 
-            filings = self.con.execute(
-                "SELECT filing_date FROM finances WHERE project_id = ? AND filing_date IS NOT NULL", (pid,)
-            ).fetchall()
-            filing_dates = sorted(str(r["filing_date"]) for r in filings)
-            ext_rows = self.con.execute(
-                "SELECT apply_date FROM applications WHERE project_id = ? AND application_type = 'Extension'",
-                (pid,),
-            ).fetchall()
+            filing_dates = filings_by_pid.get(pid, [])
+            ext_raw = ext_rows_by_pid.get(pid, [])
             extension_dates = sorted(
-                dt.date().isoformat() for dt in (_parse_timestamp(r["apply_date"]) for r in ext_rows) if dt
+                dt.date().isoformat() for dt in (_parse_timestamp(d) for d in ext_raw) if dt
             )
             latest_filing_dt = _parse_timestamp(filing_dates[-1]) if filing_dates else None
             days_since_filing = max(0, (now_utc - latest_filing_dt).days) if latest_filing_dt else None
 
-            booked = self.con.execute(
-                "SELECT unit_type, unit_consideration, rate_per_sqft, agreement_date "
-                "FROM unit_transactions WHERE project_id = ? AND status = 'BOOKED'",
-                (pid,),
-            ).fetchall()
+            booked = booked_by_pid.get(pid, [])
             by_type: Dict[str, Dict[str, Any]] = {}
             for r in booked:
                 bucket = by_type.setdefault(r["unit_type"] or "Unknown", {
@@ -551,7 +603,7 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
                 "filings_count": len(filing_dates),
                 "latest_filing_date": filing_dates[-1] if filing_dates else None,
                 "days_since_latest_filing": days_since_filing,
-                "revision_state": _revision_state(len(filing_dates), len(ext_rows)),
+                "revision_state": _revision_state(len(filing_dates), len(ext_raw)),
                 "revision_evidence_dates": extension_dates,
                 "unit_types": sorted(by_type.keys()),
                 "min_price_booked": overall["min_price"],
@@ -559,14 +611,7 @@ class IntelligenceRequestHandler(BaseHTTPRequestHandler):
                 "price_date_min": overall["price_date_min"],
                 "price_date_max": overall["price_date_max"],
                 "booked_by_unit_type": by_type,
-                "architects": [
-                    r["name"]
-                    for r in self.con.execute(
-                        "SELECT name FROM professionals WHERE project_id = ? AND role = 'architect' ORDER BY name",
-                        (pid,),
-                    ).fetchall()
-                    if r["name"]
-                ],
+                "architects": archs_by_pid.get(pid, []),
             })
         return rows
 

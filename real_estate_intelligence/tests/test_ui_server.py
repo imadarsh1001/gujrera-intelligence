@@ -28,6 +28,7 @@ class TestUIServerEndpoints(unittest.TestCase):
     def setUpClass(cls):
         cls.db_path = Path(__file__).resolve().parent.parent / "data" / "test_intelligence.sqlite"
         IntelligenceRequestHandler.setup_backends(cls.db_path)
+        IntelligenceRequestHandler.graph_engine.build_graph()
 
     def _make_get_request(self, path: str):
         handler = IntelligenceRequestHandler.__new__(IntelligenceRequestHandler)
@@ -438,6 +439,41 @@ class TestUIServerEndpoints(unittest.TestCase):
                 os.unlink(tmp.name)
             except OSError:
                 pass
+
+    def test_api_explore_pagination(self):
+        code, body = self._make_get_request("/api/explore?limit=3&offset=2")
+        self.assertEqual(code, 200)
+        data = json.loads(body.decode("utf-8"))
+        self.assertIsInstance(data, dict)
+        self.assertEqual(data["limit"], 3)
+        self.assertEqual(data["offset"], 2)
+        self.assertGreaterEqual(data["total_count"], 3)
+        self.assertEqual(len(data["items"]), 3)
+        self.assertIn("project_id", data["items"][0])
+        self.assertIn("name", data["items"][0])
+
+    def test_api_graph_scoped_ego_network(self):
+        pid = 16562
+        code, body = self._make_get_request(f"/api/graph?project_id={pid}&depth=2")
+        self.assertEqual(code, 200)
+        data = json.loads(body.decode("utf-8"))
+        self.assertIn("nodes", data)
+        self.assertIn("edges", data)
+        self.assertIsInstance(data["nodes"], list)
+        self.assertIsInstance(data["edges"], list)
+        node_ids = {n["id"] for n in data["nodes"]}
+        self.assertIn(f"project:{pid}", node_ids)
+        for e in data["edges"]:
+            self.assertIn(e["from"], node_ids)
+            self.assertIn(e["to"], node_ids)
+
+    def test_api_graph_unscoped_fallback(self):
+        code, body = self._make_get_request("/api/graph")
+        self.assertEqual(code, 200)
+        data = json.loads(body.decode("utf-8"))
+        self.assertIn("nodes", data)
+        self.assertIn("edges", data)
+        self.assertLessEqual(len(data["nodes"]), 250)
 
 
 if __name__ == "__main__":
