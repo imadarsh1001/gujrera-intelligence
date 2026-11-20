@@ -183,6 +183,13 @@
                         <tbody id="exploreBody" class="divide-y divide-slate-100"></tbody>
                     </table>
                         </div>
+                        <div id="explorePagination" class="flex flex-col sm:flex-row items-center justify-between gap-2 pt-3 border-t border-slate-200 mt-2 text-xs text-slate-600">
+                            <div id="explorePageInfo">Showing 1 to 50 of projects</div>
+                            <div class="flex items-center gap-2">
+                                <button id="btnPrevPage" onclick="changePage(-1)" class="px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">Previous</button>
+                                <button id="btnNextPage" onclick="changePage(1)" class="px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+                            </div>
+                        </div>
                         <p class="text-[10px] text-slate-400 mt-2">Price columns cover <b>registered agreements (BOOKED units) only</b>; declared prices of unsold inventory are excluded. Lowest price / ₹ per sq ft are computed over the units matching the selected unit type. Click a project name for the full dossier. Pin coordinates come from the filings; district boundaries simplified (<span class="font-mono">udit-001/india-maps-data</span>).</p>
                     </div>
                     <aside id="mapPanel" class="order-1 xl:order-2 self-start xl:sticky xl:top-20 xl:col-span-2" aria-label="Project locations on a map of Gujarat">
@@ -717,7 +724,14 @@
                         <h3 class="text-lg font-bold text-slate-900">Statutory Legal Document Due-Diligence Vault</h3>
                         <p class="text-xs text-slate-500">Core legal checklist required for property title, encumbrance, and municipal verification</p>
                     </div>
-                    <span class="text-xs font-semibold px-2 py-1 bg-emerald-50 text-emerald-700 rounded border border-emerald-200">Audit-Ready</span>
+                    <span class="text-xs font-semibold px-2 py-1 bg-amber-50 text-amber-700 rounded border border-amber-200">Reference Projects Only</span>
+                </div>
+
+                <div class="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2.5 mb-4">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-600 mt-0.5"></i>
+                    <div>
+                        <span class="font-bold">Requires PDF Document Pipeline:</span> Document catalog and legal checklist are currently available for reference projects only (789 cataloged files). Statewide PDF ingestion for 17,787 projects requires running the offline PDF crawler and document worker.
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="vaultChecklist">
@@ -729,8 +743,18 @@
         <!-- Tab 7: Document Search (RAG) -->
         <div id="content-search" role="tabpanel" aria-labelledby="tab-search" class="tab-content hidden space-y-6">
             <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                <h3 class="text-lg font-bold text-slate-900 mb-1">Regulatory Document Full-Text Search (FTS5)</h3>
-                <p class="text-xs text-slate-500 mb-4">Direct sub-millisecond search across 2,006 parsed pages of signed Form 1/2/3 certificates, encumbrance letters, and title deeds.</p>
+                <div class="flex items-center justify-between mb-1">
+                    <h3 class="text-lg font-bold text-slate-900">Regulatory Document Full-Text Search (FTS5)</h3>
+                    <span class="text-xs font-semibold px-2 py-1 bg-amber-50 text-amber-700 rounded border border-amber-200">Reference Projects Only</span>
+                </div>
+                <p class="text-xs text-slate-500 mb-4">Direct sub-millisecond search across parsed pages of signed Form 1/2/3 certificates, encumbrance letters, and title deeds.</p>
+
+                <div class="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2.5 mb-4">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-600 mt-0.5"></i>
+                    <div>
+                        <span class="font-bold">Requires PDF Document Pipeline:</span> Full-text FTS5 indexing is active for reference projects only. Statewide full-text search across all 17,787 projects is currently pending the statewide OCR extraction pipeline.
+                    </div>
+                </div>
 
                 <div class="flex gap-2 mb-6">
                     <input id="searchInput" type="text" placeholder="Search keywords (e.g. 'encumbrance', 'title clearance', 'mortgage', 'survey number')..." onkeydown="if(event.key==='Enter') executeSearch()" class="flex-1 min-w-0 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
@@ -927,8 +951,9 @@
                     } else {
                         exploreState.sort = { col, dir: 'asc' };
                     }
+                    exploreState.offset = 0;
                     persistExploreState();
-                    renderExplore();
+                    fetchExplorePage();
                 });
             });
         }
@@ -938,33 +963,16 @@
                 const mapCfg = await fetchJSON('/api/map/config').catch(() => ({ maptiler_proxy: false }));
                 mapProxy = !!(mapCfg && mapCfg.maptiler_proxy);
             } catch (e) { mapProxy = false; }
-            // The table must never wait on the map: rows render as soon as they land,
-            // and the map (slower to initialize) fills in its pins when ready.
-            fetchJSON('/api/explore').then(data => {
-                exploreRows = Array.isArray(data) ? data : (data && data.items ? data.items : []);
-                if (!Array.isArray(exploreRows)) throw new Error('unexpected response');
-                // populate the district filter with project counts
-                const sel = document.getElementById('flDistrict');
-                const current = exploreState.filters.district;
-                const districtCounts = {};
-                exploreRows.forEach(r => { if (r.district) districtCounts[r.district] = (districtCounts[r.district] || 0) + 1; });
-                const districts = Object.keys(districtCounts).sort();
-                sel.innerHTML = '<option value="">All districts</option>' + districts.map(d => `<option value="${esc(d)}">${esc(d)} (${districtCounts[d]})</option>`).join('');
-                sel.value = current;
-                const usel = document.getElementById('flUnitType');
-                const ucurrent = exploreState.filters.unitType;
-                const types = [...new Set(exploreRows.flatMap(r => r.unit_types || []))].sort();
-                usel.innerHTML = '<option value="">All</option>' + types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
-                usel.value = ucurrent;
-                exploreLoaded = true;
-                hideGlobalError();
-                renderExplore();
-            }).catch(err => {
-                showGlobalError('Could not load the Explore table: ' + err.message);
-            });
-            // Map initializes in the background; its pins fill in once rows are present.
+
+            // 1. Load facet options for filter dropdowns (districts with counts + unit types)
+            await loadExploreFacets();
+
+            // 2. Fetch server-paginated rows for explore table
+            await fetchExplorePage();
+
+            // 3. Map loads in background using compact pins (< 1 MB) instead of full explore dump
             loadMapData().then(() => {
-                if (exploreLoaded) renderMapDots(filteredExploreRows());
+                fetchMapPins(exploreState.filters.district);
             }).catch(() => {
                 document.getElementById('mapPanel').classList.add('hidden');
             });
@@ -1963,12 +1971,20 @@
         let exploreRows = [];
         let exploreLoaded = false;
         let exploreState = defaultExploreState();
+        const rowCache = new Map();
+        let mapPins = [];
+        let exploreTotalCount = 0;
+        let exploreFilteredCount = 0;
+        let exploreLimit = 50;
+        let exploreOffset = 0;
 
         function defaultExploreState() {
             return {
                 q: '',
                 filters: { district: '', unitType: '', completionBefore: '', maxPrice: '', maxRate: '', minStage: '', hasComplaints: false, hasExtensions: false },
                 sort: { col: 'district', dir: 'asc' },
+                limit: 50,
+                offset: 0,
             };
         }
 
@@ -1992,6 +2008,8 @@
             const state = defaultExploreState();
             const params = new URLSearchParams(qs);
             state.q = params.get('q') || '';
+            state.limit = Number(params.get('limit')) || 50;
+            state.offset = Number(params.get('offset')) || 0;
             const f = state.filters;
             f.district = params.get('district') || '';
             f.unitType = params.get('unitType') || '';
@@ -2021,6 +2039,8 @@
             if (f.minStage) p.set('minStage', f.minStage);
             if (f.hasComplaints) p.set('hasComplaints', '1');
             if (f.hasExtensions) p.set('hasExtensions', '1');
+            if (exploreState.offset) p.set('offset', String(exploreState.offset));
+            if (exploreState.limit && exploreState.limit !== 50) p.set('limit', String(exploreState.limit));
             p.set('sort', exploreState.sort.col + '.' + exploreState.sort.dir);
             sessionStorage.setItem(EXPLORE_STATE_KEY, JSON.stringify(exploreState));
             location.replace('#/explore?' + p.toString());
@@ -2039,6 +2059,66 @@
             document.getElementById('flExtensions').checked = f.hasExtensions;
         }
 
+        async function loadExploreFacets() {
+            try {
+                const data = await fetchJSON('/api/explore/facets');
+                if (data && data.districts) {
+                    const sel = document.getElementById('flDistrict');
+                    const current = exploreState.filters.district;
+                    const districts = Object.keys(data.districts).sort();
+                    sel.innerHTML = '<option value="">All districts</option>' + districts.map(d => `<option value="${esc(d)}">${esc(d)} (${data.districts[d]})</option>`).join('');
+                    sel.value = current;
+                }
+                if (data && data.unit_types) {
+                    const usel = document.getElementById('flUnitType');
+                    const ucurrent = exploreState.filters.unitType;
+                    usel.innerHTML = '<option value="">All</option>' + data.unit_types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+                    usel.value = ucurrent;
+                }
+            } catch (e) {
+                console.warn('Facets could not be loaded:', e);
+            }
+        }
+
+        async function fetchExplorePage() {
+            const p = new URLSearchParams();
+            p.set('limit', String(exploreState.limit || 50));
+            p.set('offset', String(exploreState.offset || 0));
+            p.set('sort_by', exploreState.sort.col);
+            p.set('sort_dir', exploreState.sort.dir);
+            if (exploreState.q) p.set('search', exploreState.q);
+            const f = exploreState.filters;
+            if (f.district) p.set('district', f.district);
+            if (f.unitType) p.set('unit_type', f.unitType);
+            if (f.completionBefore) p.set('completion_before', f.completionBefore);
+            if (f.minStage) p.set('min_stage', f.minStage);
+            if (f.hasComplaints) p.set('has_complaints', '1');
+            if (f.hasExtensions) p.set('has_extensions', '1');
+
+            try {
+                const data = await fetchJSON('/api/explore?' + p.toString());
+                if (data && data.items) {
+                    exploreRows = data.items;
+                    exploreTotalCount = data.total_count;
+                    exploreFilteredCount = data.filtered_count;
+                    exploreLimit = data.limit;
+                    exploreOffset = data.offset;
+                } else if (Array.isArray(data)) {
+                    exploreRows = data;
+                    exploreTotalCount = data.length;
+                    exploreFilteredCount = data.length;
+                    exploreLimit = 50;
+                    exploreOffset = 0;
+                }
+                exploreRows.forEach(r => rowCache.set(r.project_id, r));
+                exploreLoaded = true;
+                hideGlobalError();
+                renderExplore();
+            } catch (err) {
+                showGlobalError('Could not load Explore data: ' + err.message);
+            }
+        }
+
         function onExploreFilterChange() {
             exploreState.q = document.getElementById('exploreSearch').value.trim();
             const f = exploreState.filters;
@@ -2050,15 +2130,26 @@
             f.minStage = document.getElementById('flMinStage').value;
             f.hasComplaints = document.getElementById('flComplaints').checked;
             f.hasExtensions = document.getElementById('flExtensions').checked;
+            exploreState.offset = 0;
             persistExploreState();
-            renderExplore();
+            fetchExplorePage();
+            fetchMapPins(f.district);
         }
 
         function resetExploreFilters() {
             exploreState = defaultExploreState();
             persistExploreState();
             syncExploreControls();
-            renderExplore();
+            fetchExplorePage();
+            fetchMapPins('');
+        }
+
+        function changePage(delta) {
+            const newOffset = (exploreState.offset || 0) + delta * (exploreState.limit || 50);
+            if (newOffset < 0 || newOffset >= exploreFilteredCount) return;
+            exploreState.offset = newOffset;
+            persistExploreState();
+            fetchExplorePage();
         }
 
         function exploreBucket(row) {
@@ -2074,50 +2165,6 @@
                 price_date_max: row.price_date_max,
                 count: null,
             };
-        }
-
-        function filteredExploreRows() {
-            const f = exploreState.filters;
-            const q = exploreState.q.toLowerCase();
-            return exploreRows.filter(r => {
-                if (q) {
-                    const hay = [r.name, r.promoter_name, r.registration_number].map(x => (x || '').toLowerCase());
-                    if (!hay.some(h => h.includes(q))) return false;
-                }
-                if (f.district && r.district !== f.district) return false;
-                if (f.completionBefore && (!r.completion_date || r.completion_date.slice(0, 10) > f.completionBefore)) return false;
-                if (f.minStage !== '' && (r.progress_pct === null || r.progress_pct === undefined || r.progress_pct < Number(f.minStage))) return false;
-                if (f.hasComplaints && !(r.complaints_count > 0)) return false;
-                if (f.hasExtensions && !(r.extensions_count > 0)) return false;
-                const bucket = exploreBucket(r);
-                if (!bucket) return false;
-                if (f.maxPrice !== '' && (bucket.min_price === null || bucket.min_price === undefined || bucket.min_price > Number(f.maxPrice) * 100000)) return false;
-                if (f.maxRate !== '' && (bucket.min_rate_sqft === null || bucket.min_rate_sqft === undefined || bucket.min_rate_sqft > Number(f.maxRate))) return false;
-                return true;
-            });
-        }
-
-        function sortExploreRows(rows) {
-            const { col, dir } = exploreState.sort;
-            const mul = dir === 'asc' ? 1 : -1;
-            const val = r => {
-                if (col === 'min_price_booked' || col === 'min_rate_sqft_booked') {
-                    const b = exploreBucket(r);
-                    return b ? b[col === 'min_price_booked' ? 'min_price' : 'min_rate_sqft'] : null;
-                }
-                return r[col];
-            };
-            return [...rows].sort((a, b) => {
-                const va = val(a), vb = val(b);
-                const aNull = va === null || va === undefined || va === '';
-                const bNull = vb === null || vb === undefined || vb === '';
-                if (aNull && bNull) return (a.name || '').toLowerCase() < (b.name || '').toLowerCase() ? -1 : 1;
-                if (aNull) return 1;   // missing values sort last in either direction
-                if (bNull) return -1;
-                if (va < vb) return -1 * mul;
-                if (va > vb) return 1 * mul;
-                return ((a.name || '').toLowerCase() < (b.name || '').toLowerCase() ? -1 : 1) || (a.project_id - b.project_id);
-            });
         }
 
         const REVISION_LABELS = {
@@ -2143,20 +2190,32 @@
         }
 
         function renderExplore() {
-            const matches = sortExploreRows(filteredExploreRows());
-            const total = exploreRows.length;
+            const matches = exploreRows;
+            const startIdx = exploreFilteredCount === 0 ? 0 : (exploreOffset + 1);
+            const endIdx = Math.min(exploreOffset + matches.length, exploreFilteredCount);
 
             document.getElementById('exploreCounts').textContent =
-                total === 0 ? 'No projects in the database.' :
-                `${matches.length} of ${total} project${total === 1 ? '' : 's'} match`;
+                exploreTotalCount === 0 ? 'No projects in the database.' :
+                `Showing ${startIdx}–${endIdx} of ${exploreFilteredCount.toLocaleString()} matching projects (${exploreTotalCount.toLocaleString()} total statewide)`;
+
+            const pageInfo = document.getElementById('explorePageInfo');
+            if (pageInfo) {
+                pageInfo.textContent = exploreFilteredCount === 0 ? 'No projects match filters' :
+                    `Showing ${startIdx}–${endIdx} of ${exploreFilteredCount.toLocaleString()} projects`;
+            }
+
+            const prevBtn = document.getElementById('btnPrevPage');
+            const nextBtn = document.getElementById('btnNextPage');
+            if (prevBtn) prevBtn.disabled = (exploreOffset <= 0);
+            if (nextBtn) nextBtn.disabled = (exploreOffset + exploreLimit >= exploreFilteredCount);
 
             const notStated = [];
             const noPrice = matches.filter(r => r.min_rate_sqft_booked === null || r.min_rate_sqft_booked === undefined).length;
             const noArchitect = matches.filter(r => !r.architects || r.architects.length === 0).length;
-            if (noPrice) notStated.push(`${noPrice} of ${matches.length} matches have no registered agreement price on record (price filters exclude them)`);
-            if (noArchitect) notStated.push(`${noArchitect} of ${matches.length} matches have no architect named in the filings`);
+            if (noPrice) notStated.push(`${noPrice} on this page have no registered agreement price`);
+            if (noArchitect) notStated.push(`${noArchitect} on this page have no architect named`);
             const ns = document.getElementById('exploreNotStated');
-            if (notStated.length) { ns.textContent = 'Not stated in the source data: ' + notStated.join('; ') + '.'; ns.classList.remove('hidden'); }
+            if (notStated.length) { ns.textContent = 'Not stated in source: ' + notStated.join('; ') + '.'; ns.classList.remove('hidden'); }
             else { ns.classList.add('hidden'); }
 
             // header sort indicators
@@ -2206,11 +2265,10 @@
                 tr.addEventListener('pointerenter', () => { const d = mapDotEls[pid]; if (d) d.setAttribute('r', 7); });
                 tr.addEventListener('pointerleave', () => { const d = mapDotEls[pid]; if (d) d.setAttribute('r', 5); });
             });
-            renderMapDots(matches);
         }
 
         function openProjectDetail(pid) {
-            const row = exploreRows.find(r => r.project_id === pid);
+            const row = exploreRows.find(r => r.project_id === pid) || rowCache.get(pid);
             if (row) {
                 const reasons = [];
                 const f = exploreState.filters;
@@ -2276,7 +2334,7 @@
                 return;
             }
             const byId = new Map(exploreRows.map(r => [r.project_id, r]));
-            const cols = list.map(x => ({ id: x.project_id, row: byId.get(x.project_id) || null }));
+            const cols = list.map(x => ({ id: x.project_id, row: byId.get(x.project_id) || rowCache.get(x.project_id) || null }));
 
             const cell = (v, fmt) => (v === null || v === undefined || v === '') ? '<span class="text-slate-400">not stated</span>' : (fmt ? fmt(v) : esc(String(v)));
             const rows = [
@@ -2340,7 +2398,7 @@
             teardownMaplibre();
             renderMapDistricts();
             renderMapCities();
-            if (exploreLoaded) renderMapDots(filteredExploreRows());
+            if (exploreLoaded) renderMapDots(mapPins);
             if (message) {
                 const info = document.getElementById('mapInfo');
                 info.innerHTML = `<span class="text-amber-800"><i class="fa-solid fa-triangle-exclamation mr-1"></i>${esc(message)}</span>`;
@@ -2356,7 +2414,7 @@
             maplibreFailed = false;
             if (val && typeof maplibregl !== 'undefined' && !mapProxy) {
                 initMaplibreMap()
-                    .then(() => { if (exploreLoaded) renderMapDots(filteredExploreRows()); })
+                    .then(() => { if (exploreLoaded) renderMapDots(mapPins); })
                     .catch(() => useFallbackMap('MapTiler rejected the key or tiles did not load — using the offline sketch map.'));
             } else {
                 useFallbackMap();
@@ -2449,35 +2507,49 @@
             maplibreMap.on('mouseleave', 'district-fills', () => { maplibreMap.getCanvas().style.cursor = ''; });
             maplibreMap.on('click', 'project-dots', (e) => {
                 const pid = e.features && e.features[0] && e.features[0].properties && e.features[0].properties.project_id;
-                const row = exploreRows.find(r => r.project_id === Number(pid));
+                if (!pid) return;
+                const row = exploreRows.find(r => r.project_id === Number(pid)) || rowCache.get(Number(pid));
                 if (row) selectMapDot(row);
+                else openProjectDetail(Number(pid));
             });
             maplibreMap.on('mouseenter', 'project-dots', (e) => {
                 maplibreMap.getCanvas().style.cursor = 'pointer';
                 const f = e.features && e.features[0];
-                const row = f && exploreRows.find(r => r.project_id === Number(f.properties.project_id));
-                if (!row) return;
-                const rev = REVISION_LABELS[row.revision_state] || REVISION_LABELS.insufficient_history;
+                const pid = f && f.properties && f.properties.project_id;
+                if (!pid) return;
+                const row = exploreRows.find(r => r.project_id === Number(pid)) || rowCache.get(Number(pid));
+                const name = (row && row.name) || (f.properties && f.properties.name) || ('Project ' + pid);
+                const district = (row && row.district) || (f.properties && f.properties.district) || '';
+                const rev = (row && REVISION_LABELS[row.revision_state]) || { text: 'Registered Project' };
                 pinPopup.setLngLat(e.lngLat).setHTML(
-                    `<div style="font-size:11px"><b>${esc(row.name)}</b><br>`
-                    + `<span style="color:#64748b">${esc(row.district)} · ${rev.text}</span><br>`
+                    `<div style="font-size:11px"><b>${esc(name)}</b><br>`
+                    + `<span style="color:#64748b">${esc(district)} · ${rev.text}</span><br>`
                     + `<span style="color:#2563eb">click for details</span></div>`
                 ).addTo(maplibreMap);
             });
             maplibreMap.on('mouseleave', 'project-dots', () => { maplibreMap.getCanvas().style.cursor = ''; pinPopup.remove(); });
         }
 
-        function updateMaplibrePins(rows) {
+        function updateMaplibrePins(items) {
             if (!maplibreMap || !maplibreMap.getSource('projects')) return;
+            const features = (items || []).map(p => {
+                if (Array.isArray(p)) {
+                    return {
+                        type: 'Feature',
+                        properties: { project_id: p[0], revision_state: 'no_revision_observed', name: p[6] || ('Project ' + p[0]), district: p[7] || '' },
+                        geometry: { type: 'Point', coordinates: [p[2], p[1]] },
+                    };
+                }
+                return {
+                    type: 'Feature',
+                    properties: { project_id: p.project_id, revision_state: p.revision_state || 'no_revision_observed', name: p.name, district: p.district },
+                    geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] },
+                };
+            }).filter(f => f.geometry.coordinates[0] !== null && f.geometry.coordinates[1] !== null && !isNaN(f.geometry.coordinates[0]) && !isNaN(f.geometry.coordinates[1]));
+
             maplibreMap.getSource('projects').setData({
                 type: 'FeatureCollection',
-                features: rows
-                    .filter(r => r.latitude !== null && r.latitude !== undefined && r.longitude !== null && r.longitude !== undefined)
-                    .map(r => ({
-                        type: 'Feature',
-                        properties: { project_id: r.project_id, revision_state: r.revision_state },
-                        geometry: { type: 'Point', coordinates: [r.longitude, r.latitude] },
-                    })),
+                features: features,
             });
         }
 
@@ -2594,33 +2666,44 @@
             });
         }
 
-        function renderMapDots(rows) {
-            if (!mapData) return;
-            const missingGps = rows.filter(r => r.latitude === null || r.latitude === undefined || r.longitude === null || r.longitude === undefined).length;
-            if (missingGps) {
-                const line = `${missingGps} of ${rows.length} matches have no recorded GPS coordinates and are not plotted`;
-                const ns = document.getElementById('exploreNotStated');
-                ns.textContent = ns.textContent ? ns.textContent + ' ' + line.charAt(0).toUpperCase() + line.slice(1) + '.' : 'Not stated in the source data: ' + line + '.';
-                ns.classList.remove('hidden');
+        async function fetchMapPins(district) {
+            let url = '/api/map/pins';
+            if (district) url += '?district=' + encodeURIComponent(district);
+            try {
+                const data = await fetchJSON(url);
+                mapPins = Array.isArray(data) ? data : [];
+                renderMapDots(mapPins);
+            } catch (e) {
+                console.warn('Could not load map pins:', e);
             }
-            if (maplibreMap && maplibreMap.getSource('projects')) {
-                updateMaplibrePins(rows);
-            document.getElementById('mapEmpty').classList.toggle('hidden', rows.some(r => r.latitude !== null && r.latitude !== undefined && r.longitude !== null && r.longitude !== undefined));
-            updateDistrictChip(rows.length);
-            syncMapZoom();
-            return;
         }
+
+        function renderMapDots(items) {
+            if (!mapData) return;
+            const dataToRender = items || mapPins || [];
+            if (maplibreMap && maplibreMap.getSource('projects')) {
+                updateMaplibrePins(dataToRender);
+                document.getElementById('mapEmpty').classList.toggle('hidden', dataToRender.length > 0);
+                updateDistrictChip(dataToRender.length);
+                syncMapZoom();
+                return;
+            }
             const g = document.getElementById('mapDots');
+            if (!g) return;
             const NS = 'http://www.w3.org/2000/svg';
             g.innerHTML = '';
             mapDotEls = {};
             let plotted = 0;
-            rows.forEach(r => {
-                if (r.latitude === null || r.latitude === undefined || r.longitude === null || r.longitude === undefined) { return; }
-                const { x, y } = projLatLon(r.latitude, r.longitude);
-                const rev = REVISION_LABELS[r.revision_state] || REVISION_LABELS.insufficient_history;
-                const color = r.revision_state === 'revision_observed' ? '#f59e0b'
-                    : r.revision_state === 'no_revision_observed' ? '#10b981' : '#94a3b8';
+            dataToRender.forEach(p => {
+                let pid, lat, lon, name, dist, revState;
+                if (Array.isArray(p)) {
+                    pid = p[0]; lat = p[1]; lon = p[2]; name = p[6] || ('Project ' + pid); dist = p[7] || ''; revState = 'no_revision_observed';
+                } else {
+                    pid = p.project_id; lat = p.latitude; lon = p.longitude; name = p.name; dist = p.district; revState = p.revision_state || 'no_revision_observed';
+                }
+                if (lat === null || lat === undefined || lon === null || lon === undefined || isNaN(lat) || isNaN(lon)) return;
+                const { x, y } = projLatLon(lat, lon);
+                const color = revState === 'revision_observed' ? '#f59e0b' : revState === 'no_revision_observed' ? '#10b981' : '#94a3b8';
 
                 const hit = document.createElementNS(NS, 'circle');
                 hit.setAttribute('cx', x); hit.setAttribute('cy', y); hit.setAttribute('r', 11);
@@ -2628,7 +2711,7 @@
                 hit.setAttribute('pointer-events', 'all');
                 hit.setAttribute('tabindex', '0');
                 hit.setAttribute('role', 'button');
-                hit.setAttribute('aria-label', `${r.name} — ${rev.text}. Show in table.`);
+                hit.setAttribute('aria-label', `${name} — show in table`);
 
                 const dot = document.createElementNS(NS, 'circle');
                 dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', 5);
@@ -2637,16 +2720,20 @@
                 dot.setAttribute('stroke-width', 1.5);
                 dot.setAttribute('pointer-events', 'none');
                 const title = document.createElementNS(NS, 'title');
-                title.textContent = `${r.name} — ${rev.text}`;
+                title.textContent = `${name} (${dist})`;
                 dot.appendChild(title);
 
-                const activate = () => selectMapDot(r);
+                const activate = () => {
+                    const row = exploreRows.find(r => r.project_id === pid) || rowCache.get(pid);
+                    if (row) selectMapDot(row);
+                    else openProjectDetail(pid);
+                };
                 hit.addEventListener('click', activate);
                 hit.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
                 hit.addEventListener('pointerenter', () => dot.setAttribute('r', 7));
                 hit.addEventListener('pointerleave', () => dot.setAttribute('r', 5));
                 g.appendChild(hit); g.appendChild(dot);
-                mapDotEls[r.project_id] = dot;
+                mapDotEls[pid] = dot;
                 plotted++;
             });
             document.getElementById('mapEmpty').classList.toggle('hidden', plotted > 0);

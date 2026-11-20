@@ -33,6 +33,23 @@ def cmd_ingest(args):
     print(json.dumps(gstats, indent=2))
 
 
+def cmd_ingest_statewide(args):
+    from .db.statewide_loader import ingest_statewide
+    target = Path(args.target) if args.target else DEFAULT_DB_PATH
+    pipeline_dir = Path(args.pipeline_dir) if args.pipeline_dir else None
+    stats = ingest_statewide(pipeline_dir=pipeline_dir, target_db_path=target)
+    print("\n[SUCCESS] Statewide ingestion complete:")
+    print(json.dumps(stats, indent=2))
+
+
+def cmd_sync_turso(args):
+    from .db.turso_sync import sync_to_turso
+    target = Path(args.db) if args.db else DEFAULT_DB_PATH
+    stats = sync_to_turso(local_db_path=target, batch_size=args.batch_size)
+    print("\n[SUCCESS] Remote Turso database synchronized:")
+    print(json.dumps(stats, indent=2))
+
+
 def cmd_dossier(args):
     con = get_connection(Path(args.db))
     try:
@@ -109,7 +126,6 @@ def cmd_audit(args):
 
 from .analytics.claims_checker import SalesClaimVerifier
 from .analytics.pricing import PricingIntelligence
-from .ui.server import start_server
 
 
 def cmd_pricing(args):
@@ -172,7 +188,12 @@ def cmd_claims(args):
 
 
 def cmd_serve(args):
-    start_server(port=args.port, db_path=Path(args.db))
+    import uvicorn
+    if getattr(args, "db", None) and str(args.db) != str(DEFAULT_DB_PATH):
+        print(f"[NOTE] The --db option ({args.db}) no longer applies; FastAPI server uses DEFAULT_DB_PATH or configured environment database.")
+    port = getattr(args, "port", 8765) or 8765
+    print(f"Starting GujRERA FastAPI server on http://127.0.0.1:{port}...")
+    uvicorn.run("api.index:app", host="127.0.0.1", port=port, reload=False)
 
 
 def cmd_runway(args):
@@ -352,6 +373,18 @@ def main():
     p_ingest.add_argument("--source", default=str(DEFAULT_SOURCE_RUN), help="Source run directory containing raw data")
     p_ingest.add_argument("--target", default=str(DEFAULT_DB_PATH), help="Target SQLite database path")
     p_ingest.set_defaults(func=cmd_ingest)
+
+    # Ingest Statewide
+    p_statewide = subparsers.add_parser("ingest-statewide", help="Ingest statewide GujRERA Parquet data lake into SQLite")
+    p_statewide.add_argument("--pipeline-dir", default=None, help="Root directory of gujrera_pipeline")
+    p_statewide.add_argument("--target", default=str(DEFAULT_DB_PATH), help="Target SQLite database path")
+    p_statewide.set_defaults(func=cmd_ingest_statewide)
+
+    # Sync Turso
+    p_sync = subparsers.add_parser("sync-turso", help="Sync local database tables to remote Turso instance")
+    p_sync.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Source local SQLite database path")
+    p_sync.add_argument("--batch-size", type=int, default=200, help="Batch size per INSERT statement (default 200)")
+    p_sync.set_defaults(func=cmd_sync_turso)
 
     # Dossier
     p_dossier = subparsers.add_parser("dossier", help="Generate an institutional due-diligence dossier")

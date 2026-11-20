@@ -56,7 +56,14 @@ else:
     DEFAULT_SOURCE_RUN = _NESTED_SOURCE_RUN
 
 # Local intelligence working directory for curated SQLite DB and derived indices
-DEFAULT_DATA_DIR = PACKAGE_ROOT / "data"
+_CWD_DATA = Path.cwd() / "data"
+_WORKSPACE_DATA = WORKSPACE_ROOT / "data"
+if _CWD_DATA.exists():
+    DEFAULT_DATA_DIR = _CWD_DATA
+elif _WORKSPACE_DATA.exists():
+    DEFAULT_DATA_DIR = _WORKSPACE_DATA
+else:
+    DEFAULT_DATA_DIR = PACKAGE_ROOT / "data"
 DEFAULT_DB_PATH = DEFAULT_DATA_DIR / "intelligence.sqlite"
 DEFAULT_GRAPH_DB_PATH = DEFAULT_DATA_DIR / "knowledge_graph.sqlite"
 

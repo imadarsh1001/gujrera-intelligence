@@ -56,7 +56,7 @@ flowchart TD
         subgraph Interfaces["Sovereign Interfaces"]
             QuantitativeCore --> CLI["Analyst CLI Interface"]
             QuantitativeCore --> MCPServer["Model Context Protocol (MCP) Server"]
-            QuantitativeCore --> WebUI["Executive Diligence Web Dashboard"]
+            QuantitativeCore --> WebUI["Executive Diligence Web Dashboard (FastAPI + uvicorn)"]
             MCPServer --> AIAgent["AI Pair Programming Agent"]
         end
     end
@@ -130,7 +130,7 @@ SHAP Additive Efficiency Check: PASSED (Exact)
 
 ### B. Completion Delay Survival Model (Cox Proportional Hazards)
 
-Traditional real estate forecasts rely on promoter estimates, which suffer from severe optimism bias. The platform treats handover completion as a **time-to-event survival analysis** problem with right-censoring.
+Traditional real estate forecasts rely on promoter estimates, which suffer from severe optimism bias. The platform treats handover completion as a **time-to-event survival analysis** problem with right-censoring, trained on reference projects with certified quarterly Form 3 filings.
 
 #### Hazard Formulation
 The hazard rate $h(t \mid X)$ of a project reaching completion at month $t$ given covariates $X$ is modeled as:
@@ -203,7 +203,7 @@ The platform cross-checks Sub-Registrar encumbrance certificates and Form B decl
 
 ## 6. Automated Evaluation Harness
 
-The platform includes an automated evaluation harness (`tests/eval_harness.py`) validating model accuracy, information retrieval, and agent factuality:
+The platform includes an automated evaluation harness (`tests/eval_harness.py`) validating model accuracy, information retrieval, and agent factuality against reference project fixtures:
 
 ```
 =======================================================
@@ -215,12 +215,14 @@ The platform includes an automated evaluation harness (`tests/eval_harness.py`) 
 |---|---|---|---|:---:|
 | **Hedonic Pricing ML** | Root Mean Squared Error (RMSE) | $< \text{Rs. } 2,500\text{/sqft}$ | **Rs. 1,791.40 / sqft** | **PASS** |
 | **Pricing Interpretability** | SHAP Additive Efficiency ($\sum \phi_i = \hat{y} - \mathbb{E}[y]$) | $100.0\%$ | **100.0% Pass Rate (0 Failures)** | **PASS** |
-| **Survival Analysis** | Harrell's Concordance Index ($C$-index) | $\ge 0.75$ | **1.000 (100% Concordant)** | **PASS** |
-| **Document Retrieval** | Mean Reciprocal Rank (MRR@5) | $\ge 0.70$ | **1.000** | **PASS** |
-| **Document Retrieval** | Top-5 Retrieval Recall (Recall@5) | $\ge 0.75$ | **1.000** | **PASS** |
+| **Survival Analysis** | Harrell's Concordance Index ($C$-index) | $\ge 0.75$ | **1.000 (100% Concordant on 9-project test fixture)** | **PASS** |
+| **Document Retrieval** | Mean Reciprocal Rank (MRR@5) | $\ge 0.70$ | **1.000 (9-project reference fixture)** | **PASS** |
+| **Document Retrieval** | Top-5 Retrieval Recall (Recall@5) | $\ge 0.75$ | **1.000 (9-project reference fixture)** | **PASS** |
 | **Agent Factuality** | Ground-Truth Relational Fidelity | $100.0\%$ | **100.0% (10/10 Verified)** | **PASS** |
 | **Agent Factuality** | Hallucination Discrepancy Count | $0$ | **0 Hallucinations** | **PASS** |
 | **OVERALL SUITE** | All 4 Pillars Satisfied | — | **STATUS: PASS** | **PASS** |
+
+> **Evaluation Reality Note**: Harrell's Concordance Index ($C$-index = 1.000) and Document Retrieval (MRR@5 = 1.000, Recall@5 = 1.000) are measured strictly against the 9-project benchmark fixture (`test_intelligence.sqlite`), not the 17,787-project statewide database. FTS document search is functional for reference projects with ingested statutory PDFs; full statewide PDF ingestion remains pending the dedicated document collection pipeline.
 
 ---
 
@@ -255,17 +257,18 @@ Uncited assertions trigger an automated validation error in the evaluation harne
 
 ## 8. Interactive Terminal Web Dashboard & AI Diligence Copilot
 
-The platform provides a zero-dependency local web dashboard (`python -m real_estate_intelligence.cli serve`) rendering the executive diligence terminal in the browser, featuring **Chart.js 4.4 UMD** visual analytics and a native **AI Diligence Copilot**.
+The platform provides a high-performance local web dashboard served by a single FastAPI application (`api/index.py`) launched via uvicorn (`python run_server.py` or `python -m real_estate_intelligence.cli serve --port 8765`), rendering the executive diligence terminal in the browser, featuring **Chart.js 4.4 UMD** visual analytics, a working **Vis.js** entity knowledge graph, and a native **AI Diligence Copilot**.
 
 ### A. Quantitative ML & Visual Analytics (Chart.js 4.4 UMD)
 1. **Completion Survival Delay Curve**: Displays $S(t) = P(\text{Complete} > t)$ along with completion probability $1 - S(t)$ over a 120-month projection horizon, superimposing milestone markers for $p_{50}$ (median), $p_{75}$ (conservative), $p_{90}$ (high confidence), and the statutory RERA registered deadline.
 2. **Hedonic Pricing SHAP Waterfall**: Horizontal bar chart rendering exact additive marginal contributions ($\text{INR/sq.ft}$) for location coordinates, layout scale, physical completion, and promoter track record, complete with interactive asset class and carpet area controls.
 3. **Longitudinal Price Realization Trajectory**: Multi-year chronological line chart plotting quarterly median transaction prices, boundary envelopes (min/max), and badges for total price appreciation % and annualized CAGR.
+4. **Working Cross-Project Knowledge Graph (Vis.js)**: Explores cross-project shared professionals, promoters, and contagion risk leads across populated `graph_nodes` and `graph_edges` tables.
 
 ### B. Dual-Mode Diligence Copilot (Agentic LLM + Deterministic RAG)
 An embedded floating copilot drawer provides conversational forensic analysis backed directly by the `RealEstateIntelligenceMCP` server:
 - **⚡ Agentic LLM Mode (Gemini 2.0 Flash / OpenAI)**: Open-ended multi-turn reasoning that dynamically executes tool calls against 10 local forensic MCP tools (`get_escrow_health`, `forecast_completion_delay`, `predict_pricing_benchmark`, `audit_discrepancies`, `calculate_escrow_runway`, `get_land_records`, etc.) to retrieve exact statutory numbers and synthesize buyer recommendations. Easily configured via the Copilot Settings (`⚙️`) drawer with secure local browser storage.
-- **🛡️ Local Evidentiary Mode (Deterministic Fallback)**: Operates 100% offline with zero external cloud credentials, powered by local SQLite FTS5 BM25 search, GBDT TreeSHAP, and Cox survival modeling.
+- **🛡️ Local Evidentiary Mode (Deterministic Fallback)**: Operates 100% offline with zero external cloud credentials, powered by local SQLite FTS5 BM25 search (available for reference projects with ingested statutory PDFs; statewide PDF pipeline pending), GBDT TreeSHAP, and Cox survival modeling.
 - **Quick Prompt Chips**: One-click shortcuts for high-frequency institutional diligence questions.
 - **Strict Citation Contract**: Answers cite exact statutory and relational sources: `[Source: Run default_run | Form 3 CA | Table banks]`, ensuring zero hallucination.
 
@@ -320,7 +323,7 @@ flowchart LR
         RunReaderSeam["RunReader Protocol Seam"]
         FactBase["Curated SQLite Fact Base"]
         AnalyticsCore["GBDT ML + Cox Survival + MCP"]
-        WebTerminal["Web UI & Copilot (Port 8765)"]
+        WebTerminal["FastAPI Web UI & Copilot (Port 8765)"]
     end
 
     PrivateRepo -->|Clean Seam (ADR-0001)| RunReaderSeam
@@ -341,7 +344,7 @@ flowchart LR
 - **Database**: SQLite 3 with Write-Ahead Logging (WAL), foreign key cascading, and FTS5 BM25 search
 - **Data Science & ML**: Custom high-performance GBDT with exact TreeSHAP path decomposition; semi-parametric Cox Proportional Hazards regression
 - **GIS / Spatial**: Great-Circle Haversine spherical trigonometric distance engine
-- **Visualization**: Chart.js 4.4 UMD via official CDN; Vis.js standalone network graph
+- **Visualization**: Chart.js 4.4 UMD vendored offline; Vis.js standalone interactive network graph (working)
 - **Document Processing**: `pypdf` with asynchronous SQLite task queue (`document_jobs`)
 - **Protocol Interoperability**: Model Context Protocol (MCP) server for agentic pair programming
 

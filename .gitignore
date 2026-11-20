@@ -21,10 +21,17 @@ Thumbs.db
 # Jupyter Checkpoints
 .ipynb_checkpoints/
 
-# Temporary SQLite journals and locks
+# Testing & Cache
+.pytest_cache/
+.repowise
+*./cache
+
+# Temporary SQLite journals, locks, and statewide intelligence databases
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+*intelligence*.sqlite
+!real_estate_intelligence/data/test_intelligence.sqlite
 
 # Private data collection pipeline, raw scrapers, and raw filings (~10.5 GB)
 collected_data/
@@ -37,3 +44,24 @@ gujrera_pipeline/
 .env.*
 *.key
 *.pem
+
+*.repowise
+*./cache
+
+# IDE and assistant configuration
+.claude/
+.vscode/
+
+# Knowledge graph and intermediate tooling artifacts
+graphify-out/
+
+# Local draft plans and review scratchpads
+design_draft.md
+goldfish_review_report.md
+statewide_plan.md
+docs/STATEWIDE_INGESTION_PLAN.md
+.github/copilot-instructions.md
+docs/reviews/
+
+# Redundant root data directory (primary data in real_estate_intelligence/data/)
+/data/

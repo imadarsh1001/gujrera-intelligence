@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "real_estate_intelligence"
+version = "0.1.0"
+description = "Evidence-backed Gujarat Real Estate Intelligence Platform for Analytical Buyers and Investors"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "libsql>=0.1.11",
+    "pypdf>=5.0.0",
+]
+
+[project.optional-dependencies]
+ingest = [
+    "duckdb>=1.1.0",
+    "pyarrow>=17.0.0",
+    "fastparquet>=2024.5.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "httpx2>=2.0.0",
+]
+
+[project.scripts]
+real-estate-intelligence = "real_estate_intelligence.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["real_estate_intelligence"]
+include = ["real_estate_intelligence*"]

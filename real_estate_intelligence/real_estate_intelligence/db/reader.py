@@ -275,7 +275,7 @@ class DiskRunReader(RunReader):
         if not self.db_path.exists():
             raise FileNotFoundError(f"manifest.sqlite not found at: {self.db_path}")
 
-        self._con = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True, timeout=30.0)
+        self._con = sqlite3.connect(f"file:{self.db_path.as_posix()}?immutable=1", uri=True, timeout=30.0)
         self._con.row_factory = sqlite3.Row
 
     def _read_compressed_json(self, rel_path: Path) -> Optional[Dict[str, Any]]:

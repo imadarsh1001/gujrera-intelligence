@@ -21,8 +21,8 @@ class TestAuditCoverage(unittest.TestCase):
         """A project with verified architect, engineer, and signed Form 3 CA produces zero credential gap leads."""
         self.con.execute(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, incurred_cost_inr)
-            VALUES (101, 'PRIME TOWERS', 'REG101', 1, 'ALPHA DEV', 50000000.0)
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, incurred_cost_inr, district)
+            VALUES (101, 'PRIME TOWERS', 'REG101', 1, 'ALPHA DEV', 50000000.0, 'Ahmedabad')
             """
         )
         self.con.execute(
@@ -65,8 +65,8 @@ class TestAuditCoverage(unittest.TestCase):
         """Project with no architect registration record emits a statutory lead."""
         self.con.execute(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name)
-            VALUES (102, 'SOLO TOWER', 'REG102', 1, 'ALPHA DEV')
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district)
+            VALUES (102, 'SOLO TOWER', 'REG102', 1, 'ALPHA DEV', 'Ahmedabad')
             """
         )
         self.con.commit()
@@ -84,8 +84,8 @@ class TestAuditCoverage(unittest.TestCase):
         """Project with architect assigned but license/registration number omitted emits unverified lead."""
         self.con.execute(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name)
-            VALUES (103, 'SKYDECK', 'REG103', 1, 'ALPHA DEV')
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district)
+            VALUES (103, 'SKYDECK', 'REG103', 1, 'ALPHA DEV', 'Ahmedabad')
             """
         )
         self.con.execute(
@@ -109,8 +109,8 @@ class TestAuditCoverage(unittest.TestCase):
         """Project with no structural engineer assigned emits a statutory lead."""
         self.con.execute(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name)
-            VALUES (104, 'CIVIL TOWER', 'REG104', 1, 'ALPHA DEV')
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district)
+            VALUES (104, 'CIVIL TOWER', 'REG104', 1, 'ALPHA DEV', 'Ahmedabad')
             """
         )
         self.con.commit()
@@ -128,8 +128,8 @@ class TestAuditCoverage(unittest.TestCase):
         """Project with structural engineer assigned but license omitted emits unverified lead."""
         self.con.execute(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name)
-            VALUES (105, 'VISTA TOWER', 'REG105', 1, 'ALPHA DEV')
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district)
+            VALUES (105, 'VISTA TOWER', 'REG105', 1, 'ALPHA DEV', 'Ahmedabad')
             """
         )
         self.con.execute(
@@ -153,8 +153,8 @@ class TestAuditCoverage(unittest.TestCase):
         """Project with incurred expenditure but missing Form 3 CA certificate emits HIGH severity lead."""
         self.con.execute(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, incurred_cost_inr)
-            VALUES (106, 'PROVINCE', 'REG106', 1, 'ALPHA DEV', 75000000.0)
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, incurred_cost_inr, district)
+            VALUES (106, 'PROVINCE', 'REG106', 1, 'ALPHA DEV', 75000000.0, 'Ahmedabad')
             """
         )
         self.con.commit()
@@ -173,8 +173,8 @@ class TestAuditCoverage(unittest.TestCase):
         """Newly registered project without incurred expenditure or finances does NOT emit false Form 3 lead."""
         self.con.execute(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, incurred_cost_inr)
-            VALUES (107, 'FRESH LAUNCH', 'REG107', 1, 'ALPHA DEV', 0.0)
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, incurred_cost_inr, district)
+            VALUES (107, 'FRESH LAUNCH', 'REG107', 1, 'ALPHA DEV', 0.0, 'Ahmedabad')
             """
         )
         self.con.commit()

@@ -17,7 +17,7 @@ To guarantee institutional privacy while maintaining open-source transparency, t
 
 | Repository | Scope & Access | Key Responsibilities |
 |---|---|---|
-| **`gujrera-intelligence`** | **Public** | Quantitative ML (Hedonic GBDT + TreeSHAP), Cox survival delivery forecasting, 15-table relational SQLite fact base, Vis.js knowledge graph, interactive Chart.js analytics UI, Diligence Copilot, and 13-tool Model Context Protocol (MCP) server. |
+| **`gujrera-intelligence`** | **Public** | Quantitative ML (Hedonic GBDT + TreeSHAP), Cox survival delivery forecasting (reference projects), 15-table relational SQLite fact base, Vis.js knowledge graph (working), FastAPI web dashboard with Chart.js analytics, Diligence Copilot, and 13-tool Model Context Protocol (MCP) server. |
 | **`gujrera-pipeline`** | **Private (Sibling)** | High-throughput Scrapy crawler, Parquet lake partitioner, immutable SHA-256 run archives, dynamic Form ID discovery, and RunReader seam (ADR-0004). Lives in sibling repository `../gujrera_pipeline`. |
 
 ### Architectural Boundary (`RunReader` Seam)
@@ -43,19 +43,20 @@ gujRERA/ (Public Analysis & Intelligence Platform)
 │   ├── documents/            # PDF classification, text extraction, FTS search
 │   ├── graph/                # Cross-project professional & promoter network knowledge graph
 │   ├── mcp/                  # Model Context Protocol (MCP) server for AI research agents
-│   ├── ui/                   # Web dashboard with Chart.js analytics & AI Diligence Copilot
+│   ├── ui/                   # Single static UI directory (FastAPI backend in api/index.py)
 │   ├── cli.py                # Unified CLI interface
 │   ├── scripts/              # Operational utilities & empirical geocoding benchmarks
-│   └── tests/                # Platform test suite & automated evaluation benchmark harness
+│   └── tests/                # Platform test suite (60 passing tests) & evaluation harness
 │
+├── api/                      # Consolidated FastAPI ASGI application (index.py)
 ├── docs/                     # Architectural Decision Records (ADRs) & technical specs
-│   ├── adr/                  # 0001-run-reader-ingestion-seam.md, 0002-columnar-parquet...
+│   ├── adr/                  # 0001-run-reader..., 0002-columnar-parquet..., 0003-fastapi-consolidation.md
 │   └── SPEC.md               # End-to-end platform specification & 52 user stories
 │
 ├── GLOSSARY.md               # Canonical domain vocabulary & regulatory definitions
 ├── SHOWCASE.md               # Comprehensive institutional showcase & technical report
 ├── EGM.md                    # Explicit Architecture Blueprint & Subdirectory Contracts
-└── run_server.py             # Dashboard server launcher (127.0.0.1:8765)
+└── run_server.py             # FastAPI dashboard server launcher via uvicorn (127.0.0.1:8765)
 
 ../gujrera_pipeline/ (Sibling Private Ingestion Engine)
 ├── crawler/                  # Production Scrapy crawler (gujrera_spider.py) & Parquet partitioner
@@ -70,7 +71,7 @@ gujRERA/ (Public Analysis & Intelligence Platform)
 
 ## Code Contracts & Review Audit Trail
 
-Every code directory carries an `EGM.md` contract — a per-directory statement of its public interface, invariants, and side effects, generated from source and verified in a six-round audit (96 findings raised, 94 fixes applied, 2026-11-09). Start at the root [`EGM.md`](EGM.md) (workspace blueprint) or [`real_estate_intelligence/EGM.md`](real_estate_intelligence/EGM.md) (public-repo subtree root). The audit trail for the review lives in [`docs/reviews/`](docs/reviews/). Contracts for the private `gujrera_pipeline` repository live in that repository; the gitignored `legacy/` archive's contracts are local-only.
+Every code directory carries an `EGM.md` contract — a per-directory statement of its public interface, invariants, and side effects, generated from source and verified in a six-round audit (96 findings raised, 94 fixes applied, 2026-11-09). Start at the root [`EGM.md`](EGM.md) (workspace blueprint) or [`real_estate_intelligence/EGM.md`](real_estate_intelligence/EGM.md) (public-repo subtree root). The audit trail for the review is kept locally and not distributed in the repository. Contracts for the private `gujrera_pipeline` repository live in that repository; the gitignored `legacy/` archive's contracts are local-only.
 
 ---
 
@@ -85,22 +86,22 @@ Every code directory carries an `EGM.md` contract — a per-directory statement 
 ### 2. Quantitative Data Science & Machine Learning
 * **Interpretable Hedonic Pricing Engine (GBDT + Exact TreeSHAP)**: Predicts unit valuation rates (INR/sq.ft) across asset classes (`Residential`, `Commercial_Office`, `Commercial_Retail`, `Industrial_Warehouse`) with exact Shapley value decomposition:
   $$\mathbb{E}[Y] + \sum_{j=1}^K \phi_j(x) \equiv \hat{y}(x) \quad (\text{Additive Efficiency Guaranteed})$$
-* **Completion Delay Survival Model (Cox Proportional Hazards)**: Estimates handover delivery probabilities $S(t) = P(\text{Complete} > t)$ and forecasts delay percentiles ($p_{50}$ median, $p_{75}$ conservative, $p_{90}$ high-confidence delivery dates).
+* **Completion Delay Survival Model (Cox Proportional Hazards)**: Estimates handover delivery probabilities $S(t) = P(\text{Complete} > t)$ and forecasts delay percentiles ($p_{50}$ median, $p_{75}$ conservative, $p_{90}$ high-confidence delivery dates; trained on reference projects only).
 * **Longitudinal Price Realization Trajectory & Annualized CAGR**: Tracks chronological quarterly median rates and computes compound annual growth rates across multi-year registered sale agreements.
 * **Geospatial (GIS) Micro-Market Clustering**: Computes Great-Circle Haversine distance, Town Planning (TP) scheme clusters, and localized competitive density.
 
 ### 3. Interactive Web Dashboard & AI Diligence Copilot
-Launch with `python run_server.py` (served on port `8765`):
+Launch with `python run_server.py` (single FastAPI ASGI server via uvicorn, served on port `8765`):
 * **Executive 4-Quadrant Dossier**: Financial health, construction velocity, land identity, and legal compliance.
 * **Unit Pricing Distribution**: Percentile pricing cards, block-by-block variance, and recent registered transactions.
 * **Quantitative ML & Curves (Chart.js 4.4 UMD)**:
   - Completion Survival Hazard Curve with $p_{50}, p_{75}, p_{90}$, and registered RERA completion dates.
   - Hedonic Pricing SHAP Waterfall with interactive asset class and square footage filters.
   - Longitudinal Price Realization Trajectory with total appreciation % and CAGR badges.
-* **Interactive Knowledge Graph (Vis.js)**: Explores cross-project shared professionals and contagion risk leads.
+* **Interactive Knowledge Graph (Vis.js)**: Working cross-project entity graph exploring shared professionals and contagion risk leads across populated `graph_nodes` and `graph_edges`.
 * **Dual-Mode AI Diligence Copilot**:
   - **⚡ Agentic LLM Mode (Gemini 2.0 Flash / OpenAI)**: Open-ended multi-turn reasoning executing automated tool calls across 10 MCP forensic tools to retrieve factual ground truth and synthesize comprehensive buyer guidance.
-  - **🛡️ Local Evidentiary Mode (Deterministic Fallback)**: Operates 100% offline with zero external API credentials, powered by local SQLite FTS5 BM25 search, GBDT SHAP, and Cox survival models with zero hallucination.
+  - **🛡️ Local Evidentiary Mode (Deterministic Fallback)**: Operates 100% offline with zero external API credentials, powered by local SQLite FTS5 BM25 search (available for reference projects with ingested statutory PDFs, pending PDF pipeline for statewide records), GBDT SHAP, and Cox survival models with zero hallucination.
 
 ### 4. Agentic AI & Model Context Protocol (MCP)
 The platform exposes 13 read-only research tools via `RealEstateIntelligenceMCP`:
@@ -110,8 +111,8 @@ The platform exposes 13 read-only research tools via `RealEstateIntelligenceMCP`
 ### 5. Automated Evaluation Harness
 Run via `python -m real_estate_intelligence.cli eval`:
 * **Hedonic Pricing ML**: 5-fold cross-validation RMSE < Rs. 2,500/sqft, 100% SHAP additive efficiency.
-* **Completion Delay Survival Analysis**: Harrell's Concordance Index ($C$-index) = 1.000 (Target $\ge 0.75$).
-* **Statutory Document Retrieval**: MRR@5 = 1.000, Recall@5 = 1.000 across BM25 queries.
+* **Completion Delay Survival Analysis**: Harrell's Concordance Index ($C$-index) = 1.000 on the 9-project reference fixture (Target $\ge 0.75$; trained on reference projects only, not the 17,787-project statewide crawl).
+* **Statutory Document Retrieval**: MRR@5 = 1.000, Recall@5 = 1.000 across BM25 queries on the 9-project reference document fixture (statewide PDF ingestion pending pipeline).
 * **Agent Factuality & Evidentiary Rubric**: 100% ground-truth fidelity, 0 hallucinations.
 
 ---
@@ -167,19 +168,26 @@ uv pip install -r requirements-dev.txt
 ### 2. Running Tests & Benchmarks
 
 ```bash
-# Run complete platform unit test suite (32 tests)
-uv run python -c "import sys, unittest; sys.path.insert(0, '.'); sys.path.insert(0, 'real_estate_intelligence'); unittest.main(module=None, argv=['unittest', 'discover', '-s', 'real_estate_intelligence/tests'])"
+# Run complete platform unit & integration test suite (60 passing tests)
+uv run pytest real_estate_intelligence/tests
 
-# Run the 4-pillar AI/ML & Agent Evaluation Benchmark Harness
+# Run the 4-pillar AI/ML & Agent Evaluation Benchmark Harness (reference project fixtures)
 uv run python -m real_estate_intelligence.cli eval
 ```
 
-### 3. CLI Operations
+### 3. Data Regeneration
+The ~235 MB curated statewide SQLite database (`intelligence.sqlite`) is intentionally excluded from Git. To regenerate it locally from the sibling Parquet data lake, execute:
+```bash
+python -c "from real_estate_intelligence.db.statewide_loader import ingest_statewide; ingest_statewide()"
+```
+Rebuild performance is benchmarked at 4.18 minutes with 100% exact row-count and entity fidelity (see [`docs/LEARNINGS.md`](docs/LEARNINGS.md) §5.1).
+
+### 4. CLI Operations
 
 ```bash
 cd real_estate_intelligence
 
-# 1. Start interactive terminal web dashboard with Chart.js analytics & AI Copilot
+# 1. Start interactive FastAPI web dashboard via uvicorn (Port 8765)
 python run_server.py
 # (Or via CLI: python -m real_estate_intelligence.cli serve --port 8765)
 
@@ -204,13 +212,13 @@ python -m real_estate_intelligence.cli audit --project-id 17830
 # 8. Check registered unit pricing benchmarks & longitudinal trajectory
 python -m real_estate_intelligence.cli pricing --project-id 13705
 
-# 9. Search certified documents with BM25 ranking
+# 9. Search certified documents with BM25 ranking (reference projects with ingested PDFs)
 python -m real_estate_intelligence.cli search --query "encumbrance"
 ```
 
-### 4. Interactive Web Dashboard & AI Diligence Copilot
+### 5. Interactive Web Dashboard & AI Diligence Copilot
 
-Start the server:
+Start the single FastAPI server via uvicorn:
 ```bash
 python run_server.py
 # Or: python -m real_estate_intelligence.cli serve --port 8765
@@ -220,7 +228,7 @@ Open [http://localhost:8765](http://localhost:8765) in your browser.
 * Optional interactive basemap: set `MAPTILER_API_KEY` in the workspace `.env` (gitignored). The key stays server-side — the dashboard proxies map tiles through this server — and without it an offline sketch map is used.
 * Select projects from the header dropdown (e.g. `16562 — THE BALCONY`, `13705 — THE GATE BY DEV AASHISH`) for the full per-project dossier.
 * Explore the **Quantitative ML & Curves** tab for TreeSHAP decompositions and Cox survival delay forecasting.
-* Inspect the **Cross-Project Knowledge Graph** for contagion and shared professional links.
+* Inspect the **Cross-Project Knowledge Graph** (Working): visualize contagion and shared professional links rendered via Vis.js over SQLite `graph_nodes` and `graph_edges`.
 * Launch the **Diligence Copilot**: click the floating bot launcher or press the gear icon (`⚙️`) to input an optional Gemini or OpenAI API key for deep multi-turn tool-calling, or use the 100% offline local evidentiary engine with zero hallucination.
 
 ---

@@ -1,3 +1,3 @@
-from .server import start_server
+"""User interface and static dashboard assets."""
 
-__all__ = ["start_server"]
+__all__: list[str] = []

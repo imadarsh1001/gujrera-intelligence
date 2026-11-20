@@ -87,8 +87,8 @@ class TestIntelligenceCore(unittest.TestCase):
         # Insert a project with an expenditure drop
         self.con.execute(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name)
-            VALUES (16562, 'THE BALCONY', 'REG16562', 15778, 'DEVELOPER')
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district)
+            VALUES (16562, 'THE BALCONY', 'REG16562', 15778, 'DEVELOPER', 'Ahmedabad')
             """
         )
         # Old filing: ₹102 Cr
@@ -118,9 +118,9 @@ class TestIntelligenceCore(unittest.TestCase):
         self.con.execute(
             """
             INSERT INTO projects (
-                project_id, name, registration_number, promoter_id, promoter_name,
+                project_id, name, registration_number, promoter_id, promoter_name, district,
                 time_elapsed_pct, engg_score_pct, velocity_ratio, progress_status_label
-            ) VALUES (17830, 'SANDALWOOD', 'REG17830', 16910, 'ASHWAMEGH', 68.7, 49.0, 0.71, 'ill')
+            ) VALUES (17830, 'SANDALWOOD', 'REG17830', 16910, 'ASHWAMEGH', 'Ahmedabad', 68.7, 49.0, 0.71, 'ill')
             """
         )
         self.con.commit()
@@ -136,9 +136,9 @@ class TestIntelligenceCore(unittest.TestCase):
         self.con.execute(
             """
             INSERT INTO projects (
-                project_id, name, registration_number, promoter_id, promoter_name,
+                project_id, name, registration_number, promoter_id, promoter_name, district,
                 engg_score_pct, booking_rate_pct
-            ) VALUES (17830, 'SANDALWOOD', 'REG17830', 16910, 'ASHWAMEGH', 49.0, 68.5)
+            ) VALUES (17830, 'SANDALWOOD', 'REG17830', 16910, 'ASHWAMEGH', 'Ahmedabad', 49.0, 68.5)
             """
         )
         self.con.execute(
@@ -166,9 +166,9 @@ class TestIntelligenceCore(unittest.TestCase):
         self.con.execute(
             """
             INSERT INTO projects (
-                project_id, name, registration_number, promoter_id, promoter_name,
+                project_id, name, registration_number, promoter_id, promoter_name, district,
                 alterations_count, default_quarters_count, complaints_count
-            ) VALUES (13705, 'DEV AASHISH', 'REG13705', 1888, 'ABJIBAPA', 1, 1, 0)
+            ) VALUES (13705, 'DEV AASHISH', 'REG13705', 1888, 'ABJIBAPA', 'Ahmedabad', 1, 1, 0)
             """
         )
         self.con.commit()
@@ -183,10 +183,10 @@ class TestIntelligenceCore(unittest.TestCase):
     def test_knowledge_graph_shared_professionals(self):
         self.con.executescript(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name)
-            VALUES (16104, 'VRUNDAVAN ELYSIA', 'REG1', 10, 'PROM1');
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name)
-            VALUES (16562, 'THE BALCONY', 'REG2', 20, 'PROM2');
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district)
+            VALUES (16104, 'VRUNDAVAN ELYSIA', 'REG1', 10, 'PROM1', 'Ahmedabad');
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district)
+            VALUES (16562, 'THE BALCONY', 'REG2', 20, 'PROM2', 'Ahmedabad');
             INSERT INTO promoters (promoter_id, name) VALUES (10, 'PROM1');
             INSERT INTO promoters (promoter_id, name) VALUES (20, 'PROM2');
 
@@ -210,9 +210,9 @@ class TestIntelligenceCore(unittest.TestCase):
         from real_estate_intelligence.analytics.claims_checker import SalesClaimVerifier
         self.con.execute(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name,
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district,
                                   booking_rate_pct, unbooked_units, completion_date)
-            VALUES (999, 'TEST SCHEME', 'REG999', 1, 'TEST DEV', 60.0, 40, '2028-12-31')
+            VALUES (999, 'TEST SCHEME', 'REG999', 1, 'TEST DEV', 'Ahmedabad', 60.0, 40, '2028-12-31')
             """
         )
         self.con.commit()
@@ -230,11 +230,11 @@ class TestIntelligenceCore(unittest.TestCase):
         self.con.executescript(
             """
             INSERT INTO projects (
-                project_id, name, registration_number, promoter_id, promoter_name,
+                project_id, name, registration_number, promoter_id, promoter_name, district,
                 tp_scheme, final_plot_no, survey_no, latitude, longitude,
                 google_maps_url, complaints_count, default_quarters_count
             ) VALUES (
-                888, 'ALPHA RESIDENCY', 'REG888', 99, 'ALPHA DEV',
+                888, 'ALPHA RESIDENCY', 'REG888', 99, 'ALPHA DEV', 'Ahmedabad',
                 'TPS 50', 'FP 12', 'SY 34', 23.05, 72.55,
                 'https://maps.google.com/?q=23.05,72.55', 2, 1
             );
@@ -287,8 +287,8 @@ class TestIntelligenceCore(unittest.TestCase):
         from real_estate_intelligence.analytics.pricing import PricingIntelligence
         self.con.execute(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name)
-            VALUES (999, 'PRICING TOWER', 'REG999', 101, 'DEV')
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district)
+            VALUES (999, 'PRICING TOWER', 'REG999', 101, 'DEV', 'Ahmedabad')
             """
         )
         # Insert 3 unit transactions
@@ -442,14 +442,14 @@ class TestIntelligenceCore(unittest.TestCase):
         # 2. Insert mock spatial projects
         self.con.executescript(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, latitude, longitude, tp_scheme, total_units, booked_units, booking_rate_pct)
-            VALUES (701, 'CENTRAL PARK', 'REG701', 10, 'DEV', 23.0500, 72.5500, 'TPS 44', 100, 80, 80.0);
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district, latitude, longitude, tp_scheme, total_units, booked_units, booking_rate_pct)
+            VALUES (701, 'CENTRAL PARK', 'REG701', 10, 'DEV', 'Ahmedabad', 23.0500, 72.5500, 'TPS 44', 100, 80, 80.0);
 
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, latitude, longitude, tp_scheme, total_units, booked_units, booking_rate_pct)
-            VALUES (702, 'GREEN VALLEY', 'REG702', 10, 'DEV', 23.0550, 72.5550, 'TPS 44', 50, 25, 50.0);
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district, latitude, longitude, tp_scheme, total_units, booked_units, booking_rate_pct)
+            VALUES (702, 'GREEN VALLEY', 'REG702', 10, 'DEV', 'Ahmedabad', 23.0550, 72.5550, 'TPS 44', 50, 25, 50.0);
 
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, latitude, longitude, tp_scheme, total_units, booked_units, booking_rate_pct)
-            VALUES (703, 'DISTANT HORIZON', 'REG703', 20, 'DEV2', 23.5000, 73.0000, 'TPS 99', 200, 100, 50.0);
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district, latitude, longitude, tp_scheme, total_units, booked_units, booking_rate_pct)
+            VALUES (703, 'DISTANT HORIZON', 'REG703', 20, 'DEV2', 'Ahmedabad', 23.5000, 73.0000, 'TPS 99', 200, 100, 50.0);
 
             INSERT INTO unit_transactions (project_id, block_name, unit_type, status, rate_per_sqft)
             VALUES (702, 'Block A', 'Residential', 'BOOKED', 6200.0);
@@ -520,11 +520,11 @@ class TestIntelligenceCore(unittest.TestCase):
 
         self.con.executescript(
             """
-            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, start_date, completion_date, latest_form_one_progress_pct, velocity_ratio, estimated_cost_inr, incurred_cost_inr, complaints_count, default_quarters_count, bu_status)
+            INSERT INTO projects (project_id, name, registration_number, promoter_id, promoter_name, district, start_date, completion_date, latest_form_one_progress_pct, velocity_ratio, estimated_cost_inr, incurred_cost_inr, complaints_count, default_quarters_count, bu_status)
             VALUES
-                (910, 'FAST PROJ', 'REG910', 1, 'P1', '2023-01-01', '2025-01-01', 100.0, 1.5, 100000000.0, 100000000.0, 0, 0, 'Approved: A'),
-                (911, 'MED PROJ', 'REG911', 2, 'P2', '2022-01-01', '2026-06-01', 95.0, 1.1, 100000000.0, 90000000.0, 0, 0, 'Approved: B'),
-                (912, 'SLOW PROJ', 'REG912', 3, 'P3', '2021-01-01', '2027-01-01', 40.0, 0.6, 100000000.0, 30000000.0, 2, 1, 'Not Verified');
+                (910, 'FAST PROJ', 'REG910', 1, 'P1', 'Ahmedabad', '2023-01-01', '2025-01-01', 100.0, 1.5, 100000000.0, 100000000.0, 0, 0, 'Approved: A'),
+                (911, 'MED PROJ', 'REG911', 2, 'P2', 'Ahmedabad', '2022-01-01', '2026-06-01', 95.0, 1.1, 100000000.0, 90000000.0, 0, 0, 'Approved: B'),
+                (912, 'SLOW PROJ', 'REG912', 3, 'P3', 'Ahmedabad', '2021-01-01', '2027-01-01', 40.0, 0.6, 100000000.0, 30000000.0, 2, 1, 'Not Verified');
             """
         )
         self.con.commit()
@@ -540,6 +540,21 @@ class TestIntelligenceCore(unittest.TestCase):
         self.assertEqual(fc["project_id"], 912)
         self.assertIn("p50_median_expected_date", fc["forecasted_handover_dates"])
         self.assertIn(fc["delay_risk_label"], ["ON_TRACK", "MODERATE_DELAY", "HIGH_DELAY_RISK"])
+
+    def test_statewide_loader_date_parsing_multi_format(self):
+        """Verify multi-format date parser converts diverse GujRERA dates to ISO YYYY-MM-DD."""
+        from real_estate_intelligence.db.statewide_loader import parse_iso_date
+
+        # Test the three required formats
+        self.assertEqual(parse_iso_date("19-August-2021"), "2021-08-19")
+        self.assertEqual(parse_iso_date("01-04-2025"), "2025-04-01")
+        self.assertEqual(parse_iso_date("2024-08-19"), "2024-08-19")
+
+        # Additional sanity checks
+        self.assertEqual(parse_iso_date("31-December-2019"), "2019-12-31")
+        self.assertEqual(parse_iso_date("2024-08-19T14:30:00"), "2024-08-19")
+        self.assertIsNone(parse_iso_date(None))
+        self.assertIsNone(parse_iso_date(""))
 
 
 if __name__ == "__main__":
