@@ -46,7 +46,7 @@ gujRERA/ (Public Analysis & Intelligence Platform)
 │   ├── ui/                   # Single static UI directory (FastAPI backend in api/index.py)
 │   ├── cli.py                # Unified CLI interface
 │   ├── scripts/              # Operational utilities & empirical geocoding benchmarks
-│   └── tests/                # Platform test suite (60 passing tests) & evaluation harness
+│   └── tests/                # Platform test suite (62 passing tests) & evaluation harness
 │
 ├── api/                      # Consolidated FastAPI ASGI application (index.py)
 ├── docs/                     # Architectural Decision Records (ADRs) & technical specs
@@ -98,7 +98,7 @@ Launch with `python run_server.py` (single FastAPI ASGI server via uvicorn, serv
   - Completion Survival Hazard Curve with $p_{50}, p_{75}, p_{90}$, and registered RERA completion dates.
   - Hedonic Pricing SHAP Waterfall with interactive asset class and square footage filters.
   - Longitudinal Price Realization Trajectory with total appreciation % and CAGR badges.
-* **Interactive Knowledge Graph (Vis.js)**: Working cross-project entity graph exploring shared professionals and contagion risk leads across populated `graph_nodes` and `graph_edges`.
+* **Interactive Knowledge Graph (Vis.js)**: Working cross-project entity graph exploring shared professionals and contagion risk leads across 21,836 nodes and 51,069 edges (connecting 1,612 shared cross-project professionals).
 * **Dual-Mode AI Diligence Copilot**:
   - **⚡ Agentic LLM Mode (Gemini 2.0 Flash / OpenAI)**: Open-ended multi-turn reasoning executing automated tool calls across 10 MCP forensic tools to retrieve factual ground truth and synthesize comprehensive buyer guidance.
   - **🛡️ Local Evidentiary Mode (Deterministic Fallback)**: Operates 100% offline with zero external API credentials, powered by local SQLite FTS5 BM25 search (available for reference projects with ingested statutory PDFs, pending PDF pipeline for statewide records), GBDT SHAP, and Cox survival models with zero hallucination.
@@ -168,7 +168,7 @@ uv pip install -r requirements-dev.txt
 ### 2. Running Tests & Benchmarks
 
 ```bash
-# Run complete platform unit & integration test suite (60 passing tests)
+# Run complete platform unit & integration test suite (62 passing tests)
 uv run pytest real_estate_intelligence/tests
 
 # Run the 4-pillar AI/ML & Agent Evaluation Benchmark Harness (reference project fixtures)

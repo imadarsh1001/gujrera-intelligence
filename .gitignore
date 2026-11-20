@@ -65,3 +65,4 @@ docs/reviews/
 
 # Redundant root data directory (primary data in real_estate_intelligence/data/)
 /data/
+data/merged_2026-11-13/

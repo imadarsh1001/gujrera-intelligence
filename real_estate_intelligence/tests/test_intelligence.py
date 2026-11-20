@@ -556,6 +556,114 @@ class TestIntelligenceCore(unittest.TestCase):
         self.assertIsNone(parse_iso_date(None))
         self.assertIsNone(parse_iso_date(""))
 
+    def test_statewide_loader_hollow_lake_aborts(self):
+        """Pre-flight lake integrity gate aborts statewide ingestion when raw_json null rate > 5%."""
+        import json
+        import tempfile
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        from real_estate_intelligence.db.statewide_loader import (
+            FatalCrawlCorruptionError,
+            ingest_statewide,
+            verify_lake_integrity,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            gov_dir = tmp_root / "data" / "governance" / "2026-11-13"
+            gov_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create 100 rows with 10 null raw_json payloads (10% null rate)
+            records = []
+            for i in range(100):
+                records.append({
+                    "project_id": i + 1,
+                    "district": "Ahmedabad",
+                    "endpoint": "banks",
+                    "raw_json": None if i < 10 else json.dumps({"status": "ok"}),
+                })
+
+            schema = pa.schema([
+                ("project_id", pa.int64()),
+                ("district", pa.string()),
+                ("endpoint", pa.string()),
+                ("raw_json", pa.string()),
+            ])
+            table = pa.Table.from_pylist(records, schema=schema)
+            pq.write_table(table, gov_dir / "governance_ahmedabad.parquet")
+
+            # 1. Direct verify_lake_integrity check raises FatalCrawlCorruptionError
+            with self.assertRaises(FatalCrawlCorruptionError) as ctx:
+                verify_lake_integrity(tmp_root / "data", max_null_rate=0.05, allow_partial=False)
+            self.assertIn("exceeds 5.0% threshold", str(ctx.exception))
+
+            # 2. Ingest statewide aborts BEFORE writing to target SQLite
+            target_db = tmp_root / "target_never_written.sqlite"
+            with self.assertRaises(FatalCrawlCorruptionError):
+                ingest_statewide(pipeline_dir=tmp_root, target_db_path=target_db)
+            self.assertFalse(target_db.exists(), "Target database should NOT be created when lake is corrupt")
+
+    def test_statewide_loader_statutory_null_and_allow_partial(self):
+        """Statutory row absence passes cleanly; allow_partial=True overrides corruption abort."""
+        import json
+        import tempfile
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        from real_estate_intelligence.db.statewide_loader import (
+            FatalCrawlCorruptionError,
+            verify_lake_integrity,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            f3_dir = tmp_root / "data" / "form3" / "2026-11-13"
+            f3_dir.mkdir(parents=True, exist_ok=True)
+
+            schema = pa.schema([
+                ("project_id", pa.int64()),
+                ("district", pa.string()),
+                ("endpoint", pa.string()),
+                ("raw_json", pa.string()),
+            ])
+
+            # Scenario A: 50 projects have Form 3, 50 projects have NO row (statutory absence).
+            # All 50 existing rows have valid raw_json -> 0% null rate. Must PASS.
+            valid_records = [
+                {
+                    "project_id": i + 1,
+                    "district": "Surat",
+                    "endpoint": "form3",
+                    "raw_json": json.dumps({"data": {"formThreeAList": []}}),
+                }
+                for i in range(50)
+            ]
+            t_valid = pa.Table.from_pylist(valid_records, schema=schema)
+            pq.write_table(t_valid, f3_dir / "form3_surat.parquet")
+
+            passed = verify_lake_integrity(tmp_root / "data", max_null_rate=0.05, allow_partial=False)
+            self.assertTrue(passed)
+
+            # Scenario B: Add hollow partition (20% null) but allow_partial=True
+            hollow_records = [
+                {
+                    "project_id": i + 100,
+                    "district": "Vadodara",
+                    "endpoint": "form3",
+                    "raw_json": None if i < 10 else json.dumps({"data": {}}),
+                }
+                for i in range(50)
+            ]
+            t_hollow = pa.Table.from_pylist(hollow_records, schema=schema)
+            pq.write_table(t_hollow, f3_dir / "form3_vadodara.parquet")
+
+            # Without allow_partial -> raises FatalCrawlCorruptionError
+            with self.assertRaises(FatalCrawlCorruptionError):
+                verify_lake_integrity(tmp_root / "data", max_null_rate=0.05, allow_partial=False)
+
+            # With allow_partial=True -> passes
+            passed_partial = verify_lake_integrity(tmp_root / "data", max_null_rate=0.05, allow_partial=True)
+            self.assertTrue(passed_partial)
+
 
 if __name__ == "__main__":
     unittest.main()

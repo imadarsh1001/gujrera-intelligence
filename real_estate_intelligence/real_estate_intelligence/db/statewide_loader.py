@@ -166,18 +166,117 @@ def resolve_pipeline_dir(pipeline_dir: Optional[Union[Path, str]] = None) -> Pat
     raise FileNotFoundError("Could not find sibling gujrera_pipeline directory containing 'data'.")
 
 
+class FatalCrawlCorruptionError(RuntimeError):
+    """Raised when lake corruption or excessive null payload rate is detected."""
+    pass
+
+
+def verify_lake_integrity(
+    lake_dir: Path,
+    max_null_rate: float = 0.05,
+    allow_partial: bool = False,
+) -> bool:
+    """Validate lake payload integrity before database ingestion.
+
+    Scans all Parquet partitions in governance, form3, and form2.
+    Counts rows and null payloads (physical null, 'null', or empty string).
+    Logs a loud [WARN] if any null-payload rows exist.
+    Raises FatalCrawlCorruptionError if null rate exceeds max_null_rate (default 5%)
+    unless allow_partial=True.
+
+    Absence of a row (e.g., project has no Form 2 or Form 3 filed) is statutory
+    and does not contribute to null rows. Only existing rows with null payloads count.
+    """
+    import pyarrow.parquet as pq
+
+    candidate_files: List[Path] = []
+    for cat in ["governance", "form3", "form2"]:
+        cat_dir = lake_dir / cat
+        if cat_dir.exists():
+            candidate_files.extend(sorted(cat_dir.glob("*/*.parquet")))
+
+    if not candidate_files:
+        candidate_files = sorted(
+            f for f in lake_dir.glob("**/*.parquet")
+            if "indexes" not in str(f) and "runs" not in str(f)
+        )
+
+    if not candidate_files:
+        logger.warning("No payload parquet files found in %s to verify.", lake_dir)
+        return True
+
+    total_rows = 0
+    total_null_payloads = 0
+
+    for part_file in candidate_files:
+        try:
+            table = pq.read_table(part_file, columns=["raw_json"])
+        except Exception:
+            continue
+
+        num_rows = len(table)
+        total_rows += num_rows
+        col = table["raw_json"]
+        null_cnt = col.null_count
+
+        if null_cnt < num_rows:
+            try:
+                import pyarrow.compute as pc
+                valid = pc.drop_null(col)
+                str_nulls = pc.sum(pc.equal(valid, "null")).as_py() or 0
+                empty_nulls = pc.sum(pc.equal(valid, "")).as_py() or 0
+                null_cnt += (str_nulls + empty_nulls)
+            except Exception:
+                pass
+
+        total_null_payloads += null_cnt
+
+    null_rate = (total_null_payloads / total_rows) if total_rows > 0 else 0.0
+
+    if total_null_payloads > 0:
+        warn_msg = f"[WARN] skipped {total_null_payloads} null-payload rows across verified lake partitions ({null_rate:.2%})"
+        logger.warning(warn_msg)
+        print(warn_msg)
+
+    if null_rate > max_null_rate and not allow_partial:
+        raise FatalCrawlCorruptionError(
+            f"FATAL: Lake raw_json null rate {null_rate:.2%} ({total_null_payloads}/{total_rows} rows) "
+            f"exceeds {max_null_rate:.1%} threshold. Aborting statewide ingestion. Pass allow_partial=True to override."
+        )
+
+    logger.info(
+        "Lake integrity pre-flight PASSED: %d files, %d rows, %.2f%% null payloads",
+        len(candidate_files),
+        total_rows,
+        null_rate * 100.0,
+    )
+    return True
+
+
 def ingest_statewide(
     pipeline_dir: Optional[Union[Path, str]] = None,
     target_db_path: Optional[Union[Path, str]] = None,
+    max_null_rate: float = 0.05,
+    allow_partial: bool = False,
 ) -> Dict[str, Any]:
     """Execute complete statewide ingestion pipeline (Phases 1-2)."""
     p_root = resolve_pipeline_dir(pipeline_dir)
     target_path = Path(target_db_path) if target_db_path else DEFAULT_DB_PATH
-    target_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"=== Starting Statewide Data Ingestion ===")
     print(f"Producer Data Lake: {p_root / 'data'}")
     print(f"Target SQLite Database: {target_path}")
+
+    # ---------------------------------------------------------
+    # Pre-flight Gate: Verify Lake Parquet Data Integrity
+    # ---------------------------------------------------------
+    verify_lake_integrity(
+        p_root / "data",
+        max_null_rate=max_null_rate,
+        allow_partial=allow_partial,
+    )
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
 
     start_time = time.time()
     stats: Dict[str, Any] = {

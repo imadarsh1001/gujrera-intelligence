@@ -259,7 +259,46 @@ def get_project_detail(
     if not prow:
         return None
 
+    p_dict = dict(prow)
+    s_row = con.execute("SELECT * FROM project_summaries WHERE project_id = ?", (pid,)).fetchone()
+    if s_row:
+        s = dict(s_row)
+        if p_dict.get("booking_rate_pct") is None:
+            p_dict["booking_rate_pct"] = s.get("absorption_pct")
+        if p_dict.get("total_units") is None:
+            p_dict["total_units"] = s.get("total_units")
+        if p_dict.get("booked_units") is None:
+            p_dict["booked_units"] = s.get("booked_units")
+        if p_dict.get("unbooked_units") is None:
+            p_dict["unbooked_units"] = s.get("unbooked_units")
+        if s.get("has_bu_noc") and not p_dict.get("bu_status"):
+            p_dict["bu_status"] = f"Verified (Cert #{s.get('bu_certificate_no') or 'YES'})"
+
     blocks = [dict(r) for r in con.execute("SELECT * FROM inventory_blocks WHERE project_id = ? ORDER BY block_name", (pid,)).fetchall()]
+    if not blocks:
+        cur_blocks = con.execute("""
+            SELECT 
+                block_name,
+                COUNT(*) as total_units,
+                SUM(CASE WHEN status = 'BOOKED' THEN 1 ELSE 0 END) as booked_units,
+                SUM(CASE WHEN status != 'BOOKED' THEN 1 ELSE 0 END) as unbooked_units,
+                ROUND(100.0 * SUM(CASE WHEN status = 'BOOKED' THEN 1 ELSE 0 END) / COUNT(*), 1) as booking_rate_pct,
+                SUM(CASE WHEN asset_class = 'Residential' THEN 1 ELSE 0 END) as residential_units,
+                SUM(CASE WHEN asset_class = 'Commercial' THEN 1 ELSE 0 END) as commercial_units
+            FROM unit_transactions
+            WHERE project_id = ?
+            GROUP BY block_name
+            ORDER BY block_name
+        """, (pid,))
+        blocks = [dict(r) for r in cur_blocks.fetchall()]
+
+    units = [
+        dict(r) for r in con.execute(
+            "SELECT block_name, unit_type, asset_class, carpet_area_sqft, unit_consideration, rate_per_sqft, status, agreement_date "
+            "FROM unit_transactions WHERE project_id = ? ORDER BY agreement_date DESC, id DESC LIMIT 500",
+            (pid,)
+        ).fetchall()
+    ]
     timeline = [dict(r) for r in con.execute("SELECT * FROM quarterly_timeline WHERE project_id = ? ORDER BY id ASC", (pid,)).fetchall()]
     finances = [dict(r) for r in con.execute("SELECT * FROM finances WHERE project_id = ? ORDER BY id ASC", (pid,)).fetchall()]
     professionals = [dict(r) for r in con.execute("SELECT role, name, firm_name, license_or_reg_no FROM professionals WHERE project_id = ?", (pid,)).fetchall()]
@@ -307,8 +346,9 @@ def get_project_detail(
     ).fetchone()[0]
 
     return {
-        "project": dict(prow),
+        "project": p_dict,
         "blocks": blocks,
+        "units": units,
         "timeline": timeline,
         "finances": finances,
         "professionals": professionals,

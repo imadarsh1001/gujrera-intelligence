@@ -47,10 +47,10 @@ Root-level files:
 ## Global Side Effects
 
 - **Network**: `https://gujrera.gujarat.gov.in` (pipeline collectors), Gemini/OpenAI APIs when an API key is provided (`agent/copilot.py` or copilot UI drawer), and optional MapTiler basemap proxy; all frontend assets (Tailwind, Font Awesome, vis-network, Chart.js, MapLibre GL) are vendored under `real_estate_intelligence/real_estate_intelligence/ui/static/vendor/` and served locally
-- **Disk**: `real_estate_intelligence/data/intelligence.sqlite` (+ WAL/SHM), `graph_nodes`/`graph_edges` tables in the curated DB
+- **Disk**: `real_estate_intelligence/data/intelligence.sqlite` (+ WAL/SHM), `graph_nodes` (21,836 nodes) / `graph_edges` (51,069 edges; 1,612 shared cross-project professionals) tables in the curated DB
 - **Sockets**: local dashboard binds `127.0.0.1:8765` (default)
 
 ## System Verification
 
-- Public platform tests: `python -m pytest real_estate_intelligence/tests` (60 passing tests)
+- Public platform tests: `python -m pytest real_estate_intelligence/tests` (62 passing tests)
 - Launch dashboard: `python run_server.py` (or `python -m real_estate_intelligence serve --port 8765`)

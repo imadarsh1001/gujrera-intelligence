@@ -151,3 +151,27 @@ Before any legacy files were deleted:
   - Following the security protocol, installation was halted at the verification gate to confirm identity and provenance before making changes to `.venv` or package manifests.
   - Upon explicit verification and approval, `httpx2==2.16.2` (and `httpcore2==2.16.2`) was installed into the virtual environment, `httpx` was cleanly uninstalled, and dev requirements were updated.
 - **Result**: All 59 tests in the test suite pass with zero deprecation warnings.
+
+---
+
+## 6. Silent Ingestion & Crawl Failures: The Null-Payload Trap
+
+### 6.1 The 2026-11-13 Silent Crawl Failure & Statewide Recovery
+- **Incident**: The 2026-11-13 statewide crawl completed with HTTP 200 responses, generated cryptographic `sha256` hashes, and recorded zero entries in `failed_ids.parquet`. However, **61.8% of Form 3 rows (10,193 projects)**, **48.6% of Form 2 rows (5,944 projects)**, and **77.9% of Governance rows (82,776 rows)** contained `NULL` in the `raw_json` payload column.
+- **Discovery**: Automated ingestion and test suites initially passed green because transport status was HTTP 200 and Parquet row counts matched the project registry. The corruption was silent and was only discovered when a human operator compared project 10760 (`AADHVAN RISE`) in the UI against the live GujRERA portal: the portal showed 131 units and registered sales agreements, whereas the local database returned zero units.
+- **Root Cause in Crawl Persistence**: The crawler recorded HTTP metadata, computed sha256 hashes on responses or request tokens, but failed to persist the deserialized response body to `raw_json` during incremental delta mode / batch partition writing.
+- **Recovery via Merged Sibling Lake**:
+  - The previous full statewide crawl from 2026-10-11 was 100% complete with zero null payloads (16,337 projects in Form 3, 105,707 in Governance).
+  - A merged recovery lake was synthesized under `data/merged_2026-11-13/` without mutating the original lake or modifying the statewide loader.
+  - Where the November payload was `NULL`, `raw_json` was backfilled from the matching October crawl (`project_id` + `endpoint`), preserving November metadata while adding a `source_run` provenance tag (`"2026-11-13"` vs `"2026-10-11-backfill"`).
+  - *Trade-off*: Backfilled payloads are 33 days older than November metadata (October 11 vs November 13)—a documented and acceptable trade-off that recovered 10,193 projects and 1,126,453 sworn unit transactions.
+- **Results**:
+  - `unit_transactions` distinct projects jumped from 6,280 to **16,473** (+10,193 projects, exactly 100% of recoverable projects).
+  - `unit_transactions` row count jumped from 826,162 to **1,952,615** (+1,126,453 unit rows).
+  - Governance `banks` jumped from 3,935 to **17,739** (+13,804 records).
+  - `noc_bu_records` jumped from 13,396 to **46,943** (+33,547 records).
+  - `professionals` jumped from 3,306 to **15,565** (+12,259 records).
+  - Project 10760 (`AADHVAN RISE`) now renders 131 units (106 booked, 25 unbooked, 80.9% absorption).
+- **Validation-Gate Lesson (Never Trust HTTP 200 Without Payload Assertion)**:
+  - An HTTP 200 status code only verifies transport delivery, not payload validity.
+  - Crawlers and ETL loaders must implement hard validation gates: if the null-payload rate exceeds a strict threshold (e.g. 5%), the pipeline must fail immediately, raise an alert, and abort downstream database ingestion rather than writing silent `NULL`s into downstream analytical stores.
