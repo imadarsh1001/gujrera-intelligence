@@ -52,5 +52,5 @@ Root-level files:
 
 ## System Verification
 
-- Public platform tests: `python -m pytest real_estate_intelligence/tests` (62 passing tests)
+- Public platform tests: `python -m pytest real_estate_intelligence/tests` (64 passing tests)
 - Launch dashboard: `python run_server.py` (or `python -m real_estate_intelligence serve --port 8765`)

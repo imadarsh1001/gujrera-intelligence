@@ -46,7 +46,7 @@ gujRERA/ (Public Analysis & Intelligence Platform)
 │   ├── ui/                   # Single static UI directory (FastAPI backend in api/index.py)
 │   ├── cli.py                # Unified CLI interface
 │   ├── scripts/              # Operational utilities & empirical geocoding benchmarks
-│   └── tests/                # Platform test suite (62 passing tests) & evaluation harness
+│   └── tests/                # Platform test suite (64 passing tests) & evaluation harness
 │
 ├── api/                      # Consolidated FastAPI ASGI application (index.py)
 ├── docs/                     # Architectural Decision Records (ADRs) & technical specs
@@ -168,7 +168,7 @@ uv pip install -r requirements-dev.txt
 ### 2. Running Tests & Benchmarks
 
 ```bash
-# Run complete platform unit & integration test suite (62 passing tests)
+# Run complete platform unit & integration test suite (64 passing tests)
 uv run pytest real_estate_intelligence/tests
 
 # Run the 4-pillar AI/ML & Agent Evaluation Benchmark Harness (reference project fixtures)

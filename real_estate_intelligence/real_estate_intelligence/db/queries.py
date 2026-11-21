@@ -3,7 +3,6 @@
 Single source of truth for SQL operations across API servers and CLI tools.
 """
 
-from collections import defaultdict
 from datetime import datetime, timezone
 import json
 import sqlite3
@@ -52,9 +51,14 @@ SORT_COLUMN_MAP: Dict[str, str] = {
     "price": "min_price_booked",
     "min_rate_sqft_booked": "min_rate_sqft_booked",
     "rate": "min_rate_sqft_booked",
-    "days_since_latest_filing": "days_since_latest_filing",
+    # Note: 'days_since_latest_filing' is dropped as an active sort column since filing dates
+    # are not tracked in pre-aggregated project_summaries.
     "revision_state": "revision_state",
     "project_id": "project_id",
+    "total_units": "total_units",
+    "booked_units": "booked_units",
+    "absorption_pct": "absorption_pct",
+    "absorption": "absorption_pct",
 }
 
 
@@ -143,106 +147,105 @@ def get_map_pins(
 def get_explore_rows(con: sqlite3.Connection) -> List[Dict[str, Any]]:
     """One pre-aggregated row per project for the Explore table (route contract in ui/EGM.md).
 
-    Price aggregates cover BOOKED transactions only. Per-unit-type aggregates
-    are included for client-side filter cascading.
+    Reads directly from pre-aggregated project_summaries joined with projects metadata.
+    Zero unit_transactions scans.
     """
-    projects = [dict(r) for r in con.execute("SELECT * FROM projects ORDER BY project_id").fetchall()]
-    if not projects:
+    try:
+        has_summaries = con.execute("SELECT 1 FROM project_summaries LIMIT 1").fetchone()
+    except sqlite3.OperationalError:
+        has_summaries = None
+
+    if not has_summaries:
         return []
 
-    now_utc = datetime.now(timezone.utc)
-
-    # Bulk pre-fetch child records in 4 indexed queries (O(1) database roundtrips)
-    filings_by_pid: Dict[int, List[str]] = defaultdict(list)
-    for r in con.execute(
-        "SELECT project_id, filing_date FROM finances WHERE filing_date IS NOT NULL ORDER BY filing_date"
-    ).fetchall():
-        filings_by_pid[r["project_id"]].append(str(r["filing_date"]))
-
-    ext_rows_by_pid: Dict[int, List[Any]] = defaultdict(list)
-    for r in con.execute(
-        "SELECT project_id, apply_date FROM applications WHERE application_type = 'Extension'"
-    ).fetchall():
-        ext_rows_by_pid[r["project_id"]].append(r["apply_date"])
-
-    booked_by_pid: Dict[int, List[Any]] = defaultdict(list)
-    for r in con.execute(
-        "SELECT project_id, unit_type, unit_consideration, rate_per_sqft, agreement_date "
-        "FROM unit_transactions WHERE status = 'BOOKED'"
-    ).fetchall():
-        booked_by_pid[r["project_id"]].append(r)
-
-    archs_by_pid: Dict[int, List[str]] = defaultdict(list)
-    for r in con.execute(
-        "SELECT project_id, name FROM professionals WHERE role = 'architect' AND name IS NOT NULL AND name != '' ORDER BY name"
-    ).fetchall():
-        archs_by_pid[r["project_id"]].append(r["name"])
-
+    cur = con.execute("""
+        SELECT 
+            s.project_id, s.name, s.registration_number, s.promoter_name, s.district, s.taluka,
+            s.project_type, s.completion_date, s.latitude, s.longitude, s.min_price_booked,
+            s.min_rate_sqft_booked, s.total_units, s.booked_units, s.unbooked_units,
+            s.absorption_pct, s.unit_types_json, s.booked_by_type_json, s.architect_names,
+            p.latest_form_one_progress_pct AS progress_pct,
+            COALESCE(p.complaints_count, 0) AS complaints_count,
+            COALESCE(p.extensions_count, 0) AS extensions_count
+        FROM project_summaries s
+        LEFT JOIN projects p ON s.project_id = p.project_id
+        ORDER BY s.project_id ASC
+    """)
     rows: List[Dict[str, Any]] = []
-    for p in projects:
-        pid = p["project_id"]
+    for r in cur.fetchall():
+        s = dict(r)
+        pid = s["project_id"]
 
-        filing_dates = filings_by_pid.get(pid, [])
-        ext_raw = ext_rows_by_pid.get(pid, [])
-        extension_dates = sorted(
-            dt.date().isoformat() for dt in (parse_timestamp(d) for d in ext_raw) if dt
-        )
-        latest_filing_dt = parse_timestamp(filing_dates[-1]) if filing_dates else None
-        days_since_filing = max(0, (now_utc - latest_filing_dt).days) if latest_filing_dt else None
+        raw_utypes = s.get("unit_types_json")
+        try:
+            unit_types = json.loads(raw_utypes) if raw_utypes else []
+        except Exception:
+            unit_types = []
 
-        booked = booked_by_pid.get(pid, [])
-        by_type: Dict[str, Dict[str, Any]] = {}
-        for r in booked:
-            bucket = by_type.setdefault(r["unit_type"] or "Unknown", {
-                "min_price": None, "min_rate_sqft": None, "count": 0,
-                "price_date_min": None, "price_date_max": None,
-            })
-            bucket["count"] += 1
-            price, rate, ad = r["unit_consideration"], r["rate_per_sqft"], r["agreement_date"]
-            if price is not None and (bucket["min_price"] is None or price < bucket["min_price"]):
-                bucket["min_price"] = price
-            if rate is not None and rate > 0 and (bucket["min_rate_sqft"] is None or rate < bucket["min_rate_sqft"]):
-                bucket["min_rate_sqft"] = rate
-            if ad:
-                ad = str(ad)
-                if bucket["price_date_min"] is None or ad < bucket["price_date_min"]:
-                    bucket["price_date_min"] = ad
-                if bucket["price_date_max"] is None or ad > bucket["price_date_max"]:
-                    bucket["price_date_max"] = ad
+        raw_booked = s.get("booked_by_type_json")
+        try:
+            raw_booked_map = json.loads(raw_booked) if raw_booked else {}
+        except Exception:
+            raw_booked_map = {}
 
-        overall = {
-            "min_price": min((b["min_price"] for b in by_type.values() if b["min_price"] is not None), default=None),
-            "min_rate_sqft": min((b["min_rate_sqft"] for b in by_type.values() if b["min_rate_sqft"] is not None), default=None),
-            "price_date_min": min((b["price_date_min"] for b in by_type.values() if b["price_date_min"]), default=None),
-            "price_date_max": max((b["price_date_max"] for b in by_type.values() if b["price_date_max"]), default=None),
-        }
+        min_p = s.get("min_price_booked")
+        min_r = s.get("min_rate_sqft_booked")
+
+        # Populate min_price and min_rate_sqft only when the project has a single booked unit type.
+        # For multi-type projects, project_summaries does not track per-type pricing, so setting None
+        # avoids falsely attributing project-wide residential minimums to commercial/other unit types.
+        is_single_type = (len(raw_booked_map) == 1)
+        type_p = min_p if is_single_type else None
+        type_r = min_r if is_single_type else None
+
+        booked_by_type: Dict[str, Dict[str, Any]] = {}
+        for utype, val in raw_booked_map.items():
+            cnt = val if isinstance(val, int) else (val.get("count", 0) if isinstance(val, dict) else 0)
+            booked_by_type[utype] = {
+                "count": cnt,
+                "min_price": type_p,
+                "min_rate_sqft": type_r,
+                "price_date_min": None,
+                "price_date_max": None,
+            }
+
+        arch_raw = s.get("architect_names")
+        architects = [a.strip() for a in arch_raw.split(",") if a.strip()] if arch_raw else []
+
+        ext_cnt = s.get("extensions_count") or 0
+        rev_state = "revision_observed" if ext_cnt > 0 else "insufficient_history"
 
         rows.append({
             "project_id": pid,
-            "name": p["name"],
-            "registration_number": p["registration_number"],
-            "district": p["district"],
-            "taluka": p["taluka"],
-            "project_type": p["project_type"],
-            "promoter_name": p["promoter_name"],
-            "completion_date": p["completion_date"],
-            "progress_pct": p["latest_form_one_progress_pct"],
-            "latitude": p["latitude"],
-            "longitude": p["longitude"],
-            "complaints_count": p["complaints_count"] or 0,
-            "extensions_count": p["extensions_count"] or 0,
-            "filings_count": len(filing_dates),
-            "latest_filing_date": filing_dates[-1] if filing_dates else None,
-            "days_since_latest_filing": days_since_filing,
-            "revision_state": get_revision_state(len(filing_dates), len(ext_raw)),
-            "revision_evidence_dates": extension_dates,
-            "unit_types": sorted(by_type.keys()),
-            "min_price_booked": overall["min_price"],
-            "min_rate_sqft_booked": overall["min_rate_sqft"],
-            "price_date_min": overall["price_date_min"],
-            "price_date_max": overall["price_date_max"],
-            "booked_by_unit_type": by_type,
-            "architects": archs_by_pid.get(pid, []),
+            "name": s["name"],
+            "registration_number": s["registration_number"],
+            "district": s["district"],
+            "taluka": s["taluka"],
+            "project_type": s["project_type"],
+            "promoter_name": s["promoter_name"],
+            "completion_date": s["completion_date"],
+            "progress_pct": s["progress_pct"],
+            "latitude": s["latitude"],
+            "longitude": s["longitude"],
+            "complaints_count": s["complaints_count"],
+            "extensions_count": ext_cnt,
+            "filings_count": 0,
+            "latest_filing_date": None,
+            "days_since_latest_filing": None,
+            "revision_state": rev_state,
+            "revision_evidence_dates": [],
+            "unit_types": unit_types,
+            "min_price_booked": min_p,
+            "min_rate_sqft_booked": min_r,
+            "price_date_min": None,
+            "price_date_max": None,
+            "booked_by_unit_type": booked_by_type,
+            "architects": architects,
+            # Pre-aggregated Form 3 metrics
+            "total_units": s.get("total_units"),
+            "booked_units": s.get("booked_units"),
+            "unbooked_units": s.get("unbooked_units"),
+            "absorption_pct": s.get("absorption_pct"),
         })
     return rows
 

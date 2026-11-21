@@ -175,3 +175,6 @@ Before any legacy files were deleted:
 - **Validation-Gate Lesson (Never Trust HTTP 200 Without Payload Assertion)**:
   - An HTTP 200 status code only verifies transport delivery, not payload validity.
   - Crawlers and ETL loaders must implement hard validation gates: if the null-payload rate exceeds a strict threshold (e.g. 5%), the pipeline must fail immediately, raise an alert, and abort downstream database ingestion rather than writing silent `NULL`s into downstream analytical stores.
+
+### 6.2 Pre-Aggregated Tables & The 1.95M-Row Aggregation Regression
+- The 1.95M-row aggregation regression was caught by the P4 smoke test before the user's click-through — the pre-aggregated summaries table existed for exactly this purpose.

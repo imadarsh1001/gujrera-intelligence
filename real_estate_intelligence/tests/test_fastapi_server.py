@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -14,7 +15,7 @@ sys.path.insert(0, str(root / "real_estate_intelligence"))
 
 from fastapi.testclient import TestClient
 
-from api.index import app, AppState, setup_backends
+from api.index import app, AppState, setup_backends, api_explore
 from real_estate_intelligence.agent.copilot import AgenticCopilot
 from real_estate_intelligence.db.queries import get_revision_state
 
@@ -22,10 +23,104 @@ from real_estate_intelligence.db.queries import get_revision_state
 class TestFastAPIEndpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.db_path = Path(__file__).resolve().parent.parent / "data" / "test_intelligence.sqlite"
+        src_db = Path(__file__).resolve().parent.parent / "data" / "test_intelligence.sqlite"
+        cls.tmp_file = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
+        cls.tmp_file.close()
+        shutil.copyfile(src_db, cls.tmp_file.name)
+        cls.db_path = Path(cls.tmp_file.name)
         setup_backends(cls.db_path)
+        cls._seed_project_summaries()
         AppState.graph_engine.build_graph()
         cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls):
+        if AppState.con:
+            AppState.con.close()
+        if hasattr(cls, "tmp_file") and os.path.exists(cls.tmp_file.name):
+            try:
+                os.remove(cls.tmp_file.name)
+            except Exception:
+                pass
+
+    @classmethod
+    def _seed_project_summaries(cls):
+        con = AppState.con
+        projects = con.execute(
+            "SELECT project_id, name, registration_number, promoter_name, district, taluka, "
+            "project_type, project_status, tier, completion_date, latitude, longitude FROM projects"
+        ).fetchall()
+        records = []
+        for p in projects:
+            pid = p[0]
+            u_stats = con.execute("""
+                SELECT 
+                    COUNT(*),
+                    SUM(CASE WHEN status = 'BOOKED' THEN 1 ELSE 0 END),
+                    MIN(CASE WHEN status = 'BOOKED' AND unit_consideration > 0 THEN unit_consideration ELSE NULL END),
+                    MAX(CASE WHEN status = 'BOOKED' AND unit_consideration > 0 THEN unit_consideration ELSE NULL END),
+                    MIN(CASE WHEN status = 'BOOKED' AND rate_per_sqft > 0 THEN rate_per_sqft ELSE NULL END),
+                    AVG(CASE WHEN status = 'BOOKED' AND rate_per_sqft > 0 THEN rate_per_sqft ELSE NULL END)
+                FROM unit_transactions WHERE project_id = ?
+            """, (pid,)).fetchone()
+            tot_u = u_stats[0] or 0
+            bk_u = u_stats[1] or 0
+            unbk_u = tot_u - bk_u
+            abs_pct = round((bk_u / tot_u) * 100.0, 1) if tot_u > 0 else 0.0
+            min_p, max_p, min_r, avg_r = u_stats[2], u_stats[3], u_stats[4], u_stats[5]
+            if avg_r is not None:
+                avg_r = round(avg_r, 2)
+            if min_r is not None:
+                min_r = round(min_r, 2)
+
+            types = [r[0] for r in con.execute(
+                "SELECT DISTINCT unit_type FROM unit_transactions WHERE project_id = ? AND unit_type IS NOT NULL", (pid,)
+            ).fetchall()]
+            booked_by_type = dict(con.execute(
+                "SELECT unit_type, count(*) FROM unit_transactions WHERE project_id = ? AND status = 'BOOKED' GROUP BY unit_type", (pid,)
+            ).fetchall())
+
+            records.append((
+                pid, p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9],
+                tot_u, bk_u, unbk_u, abs_pct, min_p, max_p, min_r, avg_r,
+                json.dumps(sorted(types)) if types else None,
+                json.dumps(booked_by_type) if booked_by_type else None,
+                0, None, "Test Architect", None, None, "SBI",
+                p[10], p[11], 1
+            ))
+
+        # Also seed project 10760 into project_summaries and projects if not present
+        if not any(r[0] == 10760 for r in records):
+            con.execute("""
+                INSERT OR IGNORE INTO projects (
+                    project_id, name, registration_number, promoter_id, promoter_name, district, taluka,
+                    project_type, project_status, tier, completion_date, latitude, longitude
+                ) VALUES (10760, 'AADHVAN RISE', 'PR/GJ/AHMEDABAD/AHMEDABAD CITY/AUDA/MAA09044/160921',
+                    11840, 'AADHVAN BUILDCON', 'Ahmedabad', 'Daskroi', 'Residential', 'REGISTERED', 'TIER_1',
+                    '2025-12-31', 23.0225, 72.5714)
+            """)
+            con.commit()
+            records.append((
+                10760, "AADHVAN RISE", "PR/GJ/AHMEDABAD/AHMEDABAD CITY/AUDA/MAA09044/160921",
+                "AADHVAN BUILDCON", "Ahmedabad", "Daskroi", "Residential", "REGISTERED", "TIER_1",
+                "2025-12-31", 131, 106, 25, 80.9, 4200000.0, 7500000.0, 3850.0, 4200.0,
+                json.dumps(["2 BHK", "3 BHK"]), json.dumps({"2 BHK": 60, "3 BHK": 46}),
+                0, None, "Test Architect", None, None, "State Bank of India",
+                23.0225, 72.5714, 1
+            ))
+
+        con.executemany("""
+            INSERT INTO project_summaries (
+                project_id, name, registration_number, promoter_name, district, taluka,
+                project_type, project_status, tier, completion_date, total_units,
+                booked_units, unbooked_units, absorption_pct, min_price_booked,
+                max_price_booked, min_rate_sqft_booked, avg_rate_sqft_booked,
+                unit_types_json, booked_by_type_json, has_bu_noc, bu_certificate_no,
+                architect_names, engineer_names, ca_name, escrow_bank_name,
+                latitude, longitude, is_exact_gps
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, records)
+        con.commit()
 
     def test_root_index_html(self):
         res = self.client.get("/")
@@ -322,6 +417,7 @@ class TestFastAPIEndpoints(unittest.TestCase):
             "filings_count", "latest_filing_date", "days_since_latest_filing", "revision_state",
             "revision_evidence_dates", "unit_types", "min_price_booked", "min_rate_sqft_booked",
             "price_date_min", "price_date_max", "booked_by_unit_type", "architects",
+            "total_units", "booked_units", "unbooked_units", "absorption_pct",
         }
         row = rows[0]
         for key in required:
@@ -330,6 +426,39 @@ class TestFastAPIEndpoints(unittest.TestCase):
         self.assertIsInstance(row["booked_by_unit_type"], dict)
         self.assertIsInstance(row["unit_types"], list)
         self.assertIsInstance(row["architects"], list)
+
+    def test_api_explore_project_10760_metrics(self):
+        res = self.client.get("/api/explore")
+        self.assertEqual(res.status_code, 200)
+        rows = {r["project_id"]: r for r in res.json()}
+        self.assertIn(10760, rows)
+        row = rows[10760]
+        self.assertIsNotNone(row["total_units"])
+        self.assertIsNotNone(row["booked_units"])
+        self.assertIsNotNone(row["absorption_pct"])
+        self.assertEqual(row["total_units"], 131)
+        self.assertEqual(row["booked_units"], 106)
+        self.assertAlmostEqual(row["absorption_pct"], 80.9, places=1)
+
+    def test_api_explore_no_unit_transactions_scan(self):
+        traced_sql = []
+        AppState.con.set_trace_callback(traced_sql.append)
+        try:
+            res = api_explore(
+                limit="5", offset="0", sort_by=None, sort_dir="asc",
+                district=None, taluka=None, promoter=None, project_type=None,
+                search=None, q=None, unit_type=None, completion_before=None,
+                min_stage=None, has_complaints=None, has_extensions=None,
+            )
+            self.assertIsInstance(res, dict)
+            self.assertIn("items", res)
+            self.assertGreater(len(traced_sql), 0)
+            self.assertTrue(
+                all("unit_transactions" not in sql.lower() for sql in traced_sql),
+                f"Found unit_transactions in traced queries: {traced_sql}",
+            )
+        finally:
+            AppState.con.set_trace_callback(None)
 
     def test_api_explore_price_columns_booked_only(self):
         res = self.client.get("/api/explore")
