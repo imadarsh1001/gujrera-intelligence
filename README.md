@@ -50,7 +50,7 @@ gujRERA/ (Public Analysis & Intelligence Platform)
 │
 ├── api/                      # Consolidated FastAPI ASGI application (index.py)
 ├── docs/                     # Architectural Decision Records (ADRs) & technical specs
-│   ├── adr/                  # 0001-run-reader..., 0002-columnar-parquet..., 0003-fastapi-consolidation.md
+│   ├── adr/                  # 0001-run-reader..., 0002-columnar-parquet..., 0003-fastapi-consolidation..., 0004-analyst-workbench...
 │   └── SPEC.md               # End-to-end platform specification & 52 user stories
 │
 ├── GLOSSARY.md               # Canonical domain vocabulary & regulatory definitions

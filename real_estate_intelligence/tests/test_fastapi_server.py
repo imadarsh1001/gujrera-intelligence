@@ -135,6 +135,58 @@ class TestFastAPIEndpoints(unittest.TestCase):
                 23.0100, 72.5000, 1
             ))
 
+        # Also seed project 8001 (BU-VERIFIED non-numeric placeholder)
+        if not any(r[0] == 8001 for r in records):
+            con.execute("""
+                INSERT OR IGNORE INTO projects (
+                    project_id, name, registration_number, promoter_id, promoter_name, district, taluka,
+                    project_type, project_status, tier, completion_date, latitude, longitude
+                ) VALUES (8001, 'PLACEHOLDER SCHEME', 'PR/GJ/8001',
+                    8888, 'DEV 8001', 'Ahmedabad', 'Daskroi', 'Residential', 'REGISTERED', 'statewide',
+                    '2024-12-31', 23.0100, 72.5000)
+            """)
+            con.execute("""
+                INSERT OR IGNORE INTO noc_bu_records (
+                    project_id, block_name, bu_check, bu_date, fire_doc_id, lift_doc_id
+                ) VALUES (8001, 'A', 'YES', '2024-01-01', NULL, NULL)
+            """)
+            con.commit()
+            records.append((
+                8001, "PLACEHOLDER SCHEME", "PR/GJ/8001",
+                "DEV 8001", "Ahmedabad", "Daskroi", "Residential", "REGISTERED", "statewide",
+                "2024-12-31", 100, 80, 20, 80.0, 3000000.0, 6000000.0, 4000.0, 4500.0,
+                json.dumps(["2 BHK"]), json.dumps({"2 BHK": 80}),
+                1, "BU-VERIFIED", "Test Architect", None, None, "HDFC Bank",
+                23.0100, 72.5000, 1
+            ))
+
+        # Also seed project 8002 (Partial BU: Block A YES, Block B NO)
+        if not any(r[0] == 8002 for r in records):
+            con.execute("""
+                INSERT OR IGNORE INTO projects (
+                    project_id, name, registration_number, promoter_id, promoter_name, district, taluka,
+                    project_type, project_status, tier, completion_date, latitude, longitude
+                ) VALUES (8002, 'PARTIAL BLOCKS HEIGHTS', 'PR/GJ/8002',
+                    8889, 'DEV 8002', 'Ahmedabad', 'Daskroi', 'Residential', 'REGISTERED', 'statewide',
+                    '2023-01-01', 23.0200, 72.5100)
+            """)
+            con.execute("""
+                INSERT OR IGNORE INTO noc_bu_records (
+                    project_id, block_name, bu_check, bu_date, fire_doc_id, lift_doc_id
+                ) VALUES 
+                    (8002, 'A', 'YES', '2023-06-01', '4091111', NULL),
+                    (8002, 'B', 'NO', NULL, NULL, NULL)
+            """)
+            con.commit()
+            records.append((
+                8002, "PARTIAL BLOCKS HEIGHTS", "PR/GJ/8002",
+                "DEV 8002", "Ahmedabad", "Daskroi", "Residential", "REGISTERED", "statewide",
+                "2023-01-01", 200, 150, 50, 75.0, 3500000.0, 7000000.0, 4500.0, 5000.0,
+                json.dumps(["2 BHK", "3 BHK"]), json.dumps({"2 BHK": 100, "3 BHK": 50}),
+                0, None, "Test Architect", None, None, "SBI",
+                23.0200, 72.5100, 1
+            ))
+
         con.executemany("""
             INSERT INTO project_summaries (
                 project_id, name, registration_number, promoter_name, district, taluka,
@@ -675,7 +727,7 @@ class TestFastAPIEndpoints(unittest.TestCase):
         self.assertEqual(data["verification_checks"][0]["verdict"], expected_verdict)
 
     def test_truth_flags_statewide_and_pilot_deep(self):
-        # 1. Statewide Core project 9036
+        # 1. Statewide Core project 9036 (numeric BU cert doc ID)
         res_9036 = self.client.get("/api/project/9036")
         self.assertEqual(res_9036.status_code, 200)
         d_9036 = res_9036.json()
@@ -684,6 +736,8 @@ class TestFastAPIEndpoints(unittest.TestCase):
         self.assertEqual(tf_9036["data_tier"], "statewide_core")
         self.assertTrue(tf_9036["has_bu_noc"])
         self.assertEqual(tf_9036["bu_certificate_no"], "4095612")
+        self.assertEqual(tf_9036["bu_evidence"], "doc_id")
+        self.assertEqual(tf_9036["bu_status"], "verified")
         self.assertEqual(tf_9036["bu_date"], "2024-07-12")
         self.assertEqual(tf_9036["months_overdue"], 0)
         self.assertFalse(tf_9036["is_legacy_grandfathered"])
@@ -704,6 +758,32 @@ class TestFastAPIEndpoints(unittest.TestCase):
         self.assertIn("is_legacy_grandfathered", tf_deep)
         self.assertIn("is_govt_authority", tf_deep)
         self.assertIn("status_badge", tf_deep)
+
+    def test_truth_flags_bu_evidence_and_partial(self):
+        # 1. Non-numeric placeholder BU cert (8001: 'BU-VERIFIED')
+        res_8001 = self.client.get("/api/project/8001")
+        self.assertEqual(res_8001.status_code, 200)
+        d_8001 = res_8001.json()
+        self.assertIn("truth_flags", d_8001)
+        tf_8001 = d_8001["truth_flags"]
+        self.assertTrue(tf_8001["has_bu_noc"])
+        self.assertIsNone(tf_8001["bu_certificate_no"], "Non-numeric placeholder must be sanitized to None")
+        self.assertEqual(tf_8001["bu_evidence"], "verified_flag")
+        self.assertEqual(tf_8001["bu_status"], "verified")
+        self.assertIn("✅ BU GRANTED / VERIFIED", tf_8001["status_badge"])
+
+        # 2. Partial BU project (8002: Block A YES, Block B NO)
+        res_8002 = self.client.get("/api/project/8002")
+        self.assertEqual(res_8002.status_code, 200)
+        d_8002 = res_8002.json()
+        self.assertIn("truth_flags", d_8002)
+        tf_8002 = d_8002["truth_flags"]
+        self.assertFalse(tf_8002["has_bu_noc"], "Partial BU must not report full BU granted")
+        self.assertEqual(tf_8002["bu_status"], "partial")
+        self.assertEqual(tf_8002["bu_blocks_granted"], 1)
+        self.assertEqual(tf_8002["bu_blocks_total"], 2)
+        self.assertGreater(tf_8002["months_overdue"], 0, "Overdue math must remain honest for uncompleted blocks")
+        self.assertIn("🟠 PARTIAL BU (1/2 blocks", tf_8002["status_badge"])
 
     def test_insights_endpoints_pii_clean(self):
         pan_regex = re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b")

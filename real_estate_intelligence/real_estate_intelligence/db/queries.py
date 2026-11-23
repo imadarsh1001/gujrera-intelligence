@@ -116,23 +116,42 @@ def get_project_truth_flags(con: sqlite3.Connection, pid: int) -> Dict[str, Any]
         "FROM noc_bu_records WHERE project_id = ?",
         (pid,),
     ).fetchall()
+    bu_blocks_total = len(bu_rows)
 
     has_summary_bu = bool(srow["has_bu_noc"]) if srow and srow["has_bu_noc"] is not None else False
     summary_bu_cert = str(srow["bu_certificate_no"]).strip() if srow and srow["bu_certificate_no"] else None
-    verified_bu_blocks = [r for r in bu_rows if str(r["bu_check"] or "").strip().upper() == "YES" or r["bu_date"]]
-    has_bu_noc = has_summary_bu or len(verified_bu_blocks) > 0
 
-    if summary_bu_cert:
-        bu_certificate_no = summary_bu_cert
-    elif verified_bu_blocks and verified_bu_blocks[0]["bu_date"]:
-        bu_certificate_no = verified_bu_blocks[0]["bu_date"]
-    elif has_bu_noc:
-        bu_certificate_no = "BU-VERIFIED"
-    else:
-        bu_certificate_no = None
+    verified_bu_blocks = [r for r in bu_rows if str(r["bu_check"] or "").strip().upper() == "YES" or r["bu_date"]]
+    bu_blocks_granted = len(verified_bu_blocks)
 
     bu_dates = [str(r["bu_date"]).strip() for r in verified_bu_blocks if r["bu_date"]]
     bu_date = max(bu_dates) if bu_dates else None
+
+    # Return bu_certificate_no ONLY when the raw value is a numeric document ID
+    bu_certificate_no = None
+    if summary_bu_cert and summary_bu_cert.isdigit():
+        bu_certificate_no = summary_bu_cert
+        bu_evidence = "doc_id"
+    elif has_summary_bu or (summary_bu_cert and summary_bu_cert.upper() in ("BU-VERIFIED", "YES", "VERIFIED")) or any(str(r["bu_check"] or "").strip().upper() == "YES" for r in bu_rows):
+        bu_evidence = "verified_flag"
+    elif bu_dates:
+        bu_evidence = "date_only"
+    else:
+        bu_evidence = "none"
+
+    # Block granularity check: when 0 < bu_blocks_granted < bu_blocks_total, mark partial
+    if bu_blocks_total > 0 and 0 < bu_blocks_granted < bu_blocks_total:
+        has_bu_noc = False
+        bu_status = "partial"
+    elif bu_blocks_granted > 0 and bu_blocks_granted == bu_blocks_total:
+        has_bu_noc = True
+        bu_status = "verified"
+    elif has_summary_bu:
+        has_bu_noc = True
+        bu_status = "verified"
+    else:
+        has_bu_noc = False
+        bu_status = "none"
 
     is_govt_authority = bool(
         GOVT_AUTHORITY_REGEX.search(promoter_name) or GOVT_AUTHORITY_REGEX.search(name)
@@ -153,7 +172,10 @@ def get_project_truth_flags(con: sqlite3.Connection, pid: int) -> Dict[str, Any]
         except Exception:
             pass
 
-    if has_bu_noc:
+    if bu_status == "partial":
+        overdue_suffix = f", +{months_overdue}m overdue" if months_overdue > 0 else ""
+        status_badge = f"🟠 PARTIAL BU ({bu_blocks_granted}/{bu_blocks_total} blocks{overdue_suffix})"
+    elif has_bu_noc:
         cert_disp = bu_certificate_no or "Verified"
         date_disp = f" (Date: {bu_date})" if bu_date else ""
         status_badge = f"✅ BU GRANTED / VERIFIED (Certificate: {cert_disp}{date_disp})"
@@ -170,8 +192,12 @@ def get_project_truth_flags(con: sqlite3.Connection, pid: int) -> Dict[str, Any]
 
     return {
         "has_bu_noc": has_bu_noc,
+        "bu_status": bu_status,
         "bu_certificate_no": bu_certificate_no,
+        "bu_evidence": bu_evidence,
         "bu_date": bu_date,
+        "bu_blocks_granted": bu_blocks_granted,
+        "bu_blocks_total": bu_blocks_total,
         "months_overdue": months_overdue,
         "is_legacy_grandfathered": is_legacy_grandfathered,
         "is_govt_authority": is_govt_authority,

@@ -542,13 +542,13 @@ def api_insights_markup_spread():
         return JSONResponse(AppState.markup_spread_cache)
 
     backends = AppState.get_backends()
-    is_default_db = (
-        backends.db_path is None
-        or str(backends.db_path) == str(DEFAULT_DB_PATH)
-        or Path(backends.db_path).resolve() == Path(DEFAULT_DB_PATH).resolve()
+    is_custom_test_db = (
+        backends.db_path is not None
+        and Path(backends.db_path).is_file()
+        and Path(backends.db_path).resolve() != Path(DEFAULT_DB_PATH).resolve()
     )
 
-    if is_default_db:
+    if not is_custom_test_db:
         for snap_path in _MARKUP_SPREAD_SNAPSHOTS:
             if snap_path.is_file():
                 try:

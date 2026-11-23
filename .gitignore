@@ -57,6 +57,16 @@ gujrera_pipeline/
 # Knowledge graph and intermediate tooling artifacts
 graphify-out/
 .codegraph/
+.archify/
+
+# Frontend builds and dependencies
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# Agent checkpoints
+data/agent_checkpoints.sqlite*
+real_estate_intelligence/data/agent_checkpoints.sqlite*
 
 # Local draft plans and review scratchpads
 design_draft.md
