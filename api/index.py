@@ -35,7 +35,7 @@ from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastmcp.utilities.lifespan import combine_lifespans
 
@@ -74,6 +74,17 @@ from real_estate_intelligence.documents.search import DocumentSearchEngine
 from real_estate_intelligence.graph.network import KnowledgeGraph
 from real_estate_intelligence.mcp.fastmcp_app import mcp
 from real_estate_intelligence.mcp.server import RealEstateIntelligenceMCP
+from real_estate_intelligence.forensic_agent import (
+    ForensicAgentState,
+    build_forensic_tools,
+    create_forensic_graph,
+    get_llm,
+)
+from real_estate_intelligence.forensic_agent.guardrails import _scrub_text
+from ag_ui.core.types import RunAgentInput
+from ag_ui.encoder import EventEncoder
+from ag_ui_langgraph.agent import LangGraphAgent
+from langgraph.checkpoint.memory import MemorySaver
 
 
 class AppState:
@@ -87,6 +98,8 @@ class AppState:
     graph_engine: Any = None
     mcp_server: Any = None
     agentic_copilot: Optional[AgenticCopilot] = None
+    agent_checkpointer: Any = MemorySaver()
+    agent_llm_override: Optional[Any] = None
     markup_spread_cache: Optional[Dict[str, Any]] = None
     zombie_radar_cache: Optional[List[Dict[str, Any]]] = None
     developer_clusters_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
@@ -103,6 +116,8 @@ class AppState:
         cls.graph_engine = KnowledgeGraph(cls.con)
         cls.mcp_server = RealEstateIntelligenceMCP(cls.con)
         cls.agentic_copilot = AgenticCopilot(cls.mcp_server)
+        cls.agent_checkpointer = MemorySaver()
+        cls.agent_llm_override = None
         cls.markup_spread_cache = None
         cls.zombie_radar_cache = None
         cls.developer_clusters_cache = OrderedDict()
@@ -824,6 +839,84 @@ async def api_copilot(request: Request):
         api_key=api_key,
     )
     return JSONResponse(sanitize_floats(reply_data))
+
+
+@app.post("/api/agent")
+async def api_forensic_agent(input_data: RunAgentInput, request: Request):
+    """Institutional forensic due diligence agent endpoint via AG-UI protocol."""
+    enable_flag = os.environ.get("ENABLE_FORENSIC_AGENT", "").strip().lower()
+    if enable_flag not in ("1", "true"):
+        raise HTTPException(
+            status_code=503,
+            detail="Forensic agent endpoint is disabled. Set ENABLE_FORENSIC_AGENT=1 to enable.",
+        )
+
+    # Scrub PII from input_data.messages before calling agent.run to protect initial checkpoint
+    if hasattr(input_data, "messages") and input_data.messages:
+        for m in input_data.messages:
+            if hasattr(m, "content") and isinstance(m.content, str):
+                m.content = _scrub_text(m.content)
+            elif isinstance(m, dict) and "content" in m and isinstance(m["content"], str):
+                m["content"] = _scrub_text(m["content"])
+
+    # Restrict input_data.state to allowed public input keys only (never allow injection of internal state)
+    if hasattr(input_data, "state") and isinstance(input_data.state, dict):
+        allowed_input_keys = {"active_project_id"}
+        input_data.state = {k: v for k, v in input_data.state.items() if k in allowed_input_keys}
+
+    backends = AppState.get_backends()
+    db_path = backends.db_path or DEFAULT_DB_PATH
+    request_con = get_connection(db_path, read_only=True)
+
+    tools, teardown_tools = build_forensic_tools(request_con)
+    llm, offline_mode = get_llm(llm_override=getattr(AppState, "agent_llm_override", None))
+
+    graph = create_forensic_graph(
+        tools=tools,
+        checkpointer=AppState.agent_checkpointer,
+        llm=llm,
+        offline_mode=offline_mode,
+        con=request_con,
+    )
+
+    request_agent = LangGraphAgent(
+        name="gujrera_forensic_analyst",
+        graph=graph,
+        emit_interrupt_outcome=True,
+        emit_raw_events=False,
+    )
+
+    accept_header = request.headers.get("accept")
+    encoder = EventEncoder(accept=accept_header)
+
+    async def event_generator():
+        try:
+            async for event in request_agent.run(input_data):
+                yield encoder.encode(event)
+        finally:
+            teardown_tools()
+            try:
+                request_con.close()
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type=encoder.get_content_type(),
+    )
+
+
+@app.get("/api/agent/health")
+def api_forensic_agent_health():
+    """Health check for sovereign forensic diligence agent."""
+    enable_flag = os.environ.get("ENABLE_FORENSIC_AGENT", "").strip().lower()
+    return {
+        "status": "ok" if enable_flag in ("1", "true") else "disabled",
+        "agent": {
+            "name": "gujrera_forensic_analyst",
+            "enabled": enable_flag in ("1", "true"),
+        },
+    }
 
 
 @app.get("/", response_class=HTMLResponse)

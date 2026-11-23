@@ -16,6 +16,10 @@ dependencies = [
     "pypdf>=5.0.0",
     "fastmcp==4.2.4",
     "pyyaml>=6.0.0",
+    "langgraph>=1.2,<2.0",
+    "langchain-core",
+    "langchain-openai",
+    "ag-ui-langgraph==0.0.48",
 ]
 
 [project.optional-dependencies]
@@ -35,3 +39,8 @@ real-estate-intelligence = "real_estate_intelligence.cli:main"
 [tool.setuptools.packages.find]
 where = ["real_estate_intelligence"]
 include = ["real_estate_intelligence*"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:.*get_config_jsonschema.*::ag_ui_langgraph.agent",
+]
