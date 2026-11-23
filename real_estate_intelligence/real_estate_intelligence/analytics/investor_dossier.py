@@ -1,6 +1,7 @@
 """Generate the 4-Quadrant Institutional Due-Diligence Dossier for investors."""
 
 import sqlite3
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from ..graph.network import KnowledgeGraph
@@ -95,6 +96,67 @@ def generate_investor_dossier(con: sqlite3.Connection, project_id: int) -> str:
     )
     bu_rows = cur.fetchall()
 
+    # Project Summary Ground Truth
+    cur.execute(
+        "SELECT has_bu_noc, bu_certificate_no, tier FROM project_summaries WHERE project_id = ?",
+        (project_id,),
+    )
+    summary_row = cur.fetchone()
+    has_summary_bu = bool(summary_row["has_bu_noc"]) if summary_row else False
+    summary_bu_cert = summary_row["bu_certificate_no"] if summary_row else None
+
+    # Inspect noc_bu_records
+    verified_bu_blocks = [
+        r for r in bu_rows
+        if str(r["bu_check"] or "").strip().upper() == "YES"
+    ]
+    has_verified_bu = has_summary_bu or len(verified_bu_blocks) > 0
+
+    # Government authority check
+    p_pname = str(proj["promoter_name"] or "")
+    p_name = str(proj["name"] or "")
+    p_reg = str(proj["registration_number"] or "")
+    full_text = f"{p_pname} {p_name} {p_reg}".upper()
+    is_govt = any(g in full_text for g in ("AUDA", "VUDA", "SUDA", "RUDA", "GIDC", "PMAY", "GHB", "GUJARAT HOUSING BOARD"))
+
+    # Completion date & day-accurate overdue calculation
+    today_utc = datetime.now(timezone.utc).date()
+    comp_date_str = str(proj["completion_date"] or "").strip()[:10]
+    comp_date: Optional[date] = None
+    if comp_date_str:
+        try:
+            comp_date = datetime.strptime(comp_date_str, "%Y-%m-%d").date()
+        except Exception:
+            pass
+
+    is_overdue = False
+    months_overdue = 0
+    is_legacy = False
+    if comp_date:
+        if comp_date.year <= 2019:
+            is_legacy = True
+        if today_utc > comp_date:
+            is_overdue = True
+            days_diff = (today_utc - comp_date).days
+            months_overdue = max(1, round(days_diff / 30.4375))
+
+    # Determine BU status label and detail
+    if has_verified_bu:
+        bu_cert_disp = summary_bu_cert or (verified_bu_blocks[0]["bu_date"] if verified_bu_blocks else None) or "Verified"
+        bu_date_disp = (verified_bu_blocks[0]["bu_date"] if verified_bu_blocks else None) or ""
+        date_str = f" (Date: {bu_date_disp})" if bu_date_disp else ""
+        bu_status_full = f"✅ BU GRANTED / VERIFIED (Certificate: {bu_cert_disp}{date_str})"
+    elif is_overdue:
+        if is_govt:
+            bu_status_full = f"ℹ️ EXPIRED WITHOUT BU (+{months_overdue}m overdue, Govt Authority Scheme)"
+        elif is_legacy:
+            bu_status_full = f"ℹ️ EXPIRED WITHOUT BU (+{months_overdue}m overdue, Legacy Pre-2020 Grandfathered)"
+        else:
+            bu_status_full = f"🔴 EXPIRED_WITHOUT_BU (+{months_overdue} months overdue since {comp_date_str})"
+    else:
+        sched_date = comp_date_str or "Statutory Deadline"
+        bu_status_full = f"⏳ Pending / Under Construction (Scheduled completion: {sched_date})"
+
     # Previous Projects
     cur.execute("SELECT linked_project_name, linked_project_id FROM previous_projects WHERE project_id = ?", (project_id,))
     prior_projects = cur.fetchall()
@@ -135,7 +197,7 @@ def generate_investor_dossier(con: sqlite3.Connection, project_id: int) -> str:
         f"> * Physical Progress: **{proj['engg_score_pct'] or proj['latest_form_one_progress_pct'] or 'N/A'}%** | Scheduled Time Elapsed: **{proj['time_elapsed_pct'] or 'N/A'}%**",
         f"> * Construction Velocity Ratio: **{proj['velocity_ratio'] or 'N/A'}x** (Portal Status: `{proj['progress_status_label'] or 'N/A'}`)",
         f"> * Estimated Project Cost: **{format_inr_cr(proj['estimated_cost_inr'])}** | Incurred Cost: **{format_inr_cr(proj['incurred_cost_inr'])}**",
-        f"> * Society Registration: **{proj['society_reg_date'] or 'Pending / Not Formed'}** | BU Status: **{proj['bu_status'] or 'Pending'}**",
+        f"> * Society Registration: **{proj['society_reg_date'] or 'Pending / Not Formed'}** | BU Status: **{bu_status_full}**",
         "",
         "---",
         "",
@@ -209,12 +271,21 @@ def generate_investor_dossier(con: sqlite3.Connection, project_id: int) -> str:
     lines.extend([
         "",
         "### Quadrant 4: Legal Milestones, Regulatory Radar & Contagion",
-        f"- **Municipal Building Use (BU) Permission:** {proj['bu_status'] or 'Pending'}",
+        f"- **Municipal Building Use (BU) Permission:** {bu_status_full}",
         f"- **Apartment Owners Society Registration:** {proj['society_reg_date'] or 'Pending / Not Formed'}",
         f"- **Consumer Complaints Filed:** {proj['complaints_count']} application(s)",
         f"- **Post-Registration Sanctioned Alterations:** {proj['alterations_count']} filing(s)",
         f"- **Statutory Quarterly Defaults (isDefault = YES):** {proj['default_quarters_count']} quarter(s)",
     ])
+
+    if not has_verified_bu and is_overdue and not is_govt and not is_legacy:
+        lines.extend([
+            "",
+            "> [!WARNING]",
+            f"> **Statutory Delivery Default Alert:** Project completion deadline (`{comp_date_str}`) elapsed "
+            f"**{months_overdue} months ago** without sworn municipal Building Use (BU) clearance on file. "
+            "High regulatory and trapped-buyer possession risk.",
+        ])
 
     if form5_rows:
         lines.append("")

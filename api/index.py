@@ -27,6 +27,7 @@ import math
 import os
 import sys
 import threading
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -52,12 +53,15 @@ from real_estate_intelligence.agent.copilot import AgenticCopilot, handle_copilo
 from real_estate_intelligence.config import DEFAULT_DB_PATH
 from real_estate_intelligence.db.database import get_connection
 from real_estate_intelligence.db.queries import (
+    get_developer_clusters_data,
     get_explore_facets,
     get_explore_rows,
     get_graph_data,
     get_map_pins,
+    get_markup_spread_data,
     get_project_detail,
     get_projects_list,
+    get_zombie_radar_data,
     sort_explore_rows,
 )
 from real_estate_intelligence.documents.search import DocumentSearchEngine
@@ -76,6 +80,9 @@ class AppState:
     graph_engine: Any = None
     mcp_server: Any = None
     agentic_copilot: Optional[AgenticCopilot] = None
+    markup_spread_cache: Optional[Dict[str, Any]] = None
+    zombie_radar_cache: Optional[List[Dict[str, Any]]] = None
+    developer_clusters_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 
     @classmethod
     def setup_backends(cls, db_path: Optional[Any] = None) -> None:
@@ -88,12 +95,33 @@ class AppState:
         cls.graph_engine = KnowledgeGraph(cls.con)
         cls.mcp_server = RealEstateIntelligenceMCP(cls.con)
         cls.agentic_copilot = AgenticCopilot(cls.mcp_server)
+        cls.markup_spread_cache = None
+        cls.zombie_radar_cache = None
+        cls.developer_clusters_cache = OrderedDict()
 
     @classmethod
     def get_backends(cls) -> "AppState":
         if cls.con is None:
             cls.setup_backends()
         return cls
+
+
+def _get_cached_developer_cluster(name: str) -> Optional[Dict[str, Any]]:
+    key = name.strip().upper()
+    if key in AppState.developer_clusters_cache:
+        val = AppState.developer_clusters_cache.pop(key)
+        AppState.developer_clusters_cache[key] = val
+        return val
+    return None
+
+
+def _put_cached_developer_cluster(name: str, val: Dict[str, Any]) -> None:
+    key = name.strip().upper()
+    if key in AppState.developer_clusters_cache:
+        AppState.developer_clusters_cache.pop(key)
+    elif len(AppState.developer_clusters_cache) >= 256:
+        AppState.developer_clusters_cache.popitem(last=False)
+    AppState.developer_clusters_cache[key] = val
 
 
 def setup_backends(db_path: Optional[Any] = None) -> None:
@@ -407,6 +435,72 @@ def api_graph(
     return JSONResponse(sanitize_floats(data))
 
 
+@app.get("/api/insights/zombie_radar")
+def api_insights_zombie_radar(
+    limit: int = Query(50, ge=1, le=200, description="Max projects to return"),
+):
+    """Retrieve high-risk modern private schemes past completion deadline with no BU/NOC."""
+    backends = AppState.get_backends()
+    if AppState.zombie_radar_cache is not None and limit <= len(AppState.zombie_radar_cache):
+        return JSONResponse(AppState.zombie_radar_cache[:limit])
+    try:
+        data = get_zombie_radar_data(backends.con, limit=limit)
+        AppState.zombie_radar_cache = data
+        return JSONResponse(sanitize_floats(data))
+    except Exception as e:
+        logger.exception("Error in /api/insights/zombie_radar: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/insights/markup_spread")
+def api_insights_markup_spread():
+    """Statewide unbooked asking rate markup vs. registered booked rate spread."""
+    backends = AppState.get_backends()
+    if AppState.markup_spread_cache is not None:
+        return JSONResponse(AppState.markup_spread_cache)
+    try:
+        data = get_markup_spread_data(backends.con)
+        AppState.markup_spread_cache = data
+        return JSONResponse(sanitize_floats(data))
+    except Exception as e:
+        logger.exception("Error in /api/insights/markup_spread: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/insights/developer_clusters")
+def api_insights_developer_clusters(
+    promoter_name: Optional[str] = Query(None, description="Optional promoter brand or company name"),
+):
+    """Resolve developer portfolio clusters via Composite Key (c) or get statewide brand overview."""
+    backends = AppState.get_backends()
+    prom_key = (promoter_name or "").strip()
+    if prom_key:
+        cached = _get_cached_developer_cluster(prom_key)
+        if cached is not None:
+            return JSONResponse(cached)
+        try:
+            data = get_developer_clusters_data(backends.con, promoter_name=prom_key)
+            cleaned = sanitize_floats(data)
+            _put_cached_developer_cluster(prom_key, cleaned)
+            return JSONResponse(cleaned)
+        except Exception as e:
+            logger.exception("Error in /api/insights/developer_clusters: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # Default overview mode
+    cached_overview = _get_cached_developer_cluster("__OVERVIEW__")
+    if cached_overview is not None:
+        return JSONResponse(cached_overview)
+    try:
+        data = get_developer_clusters_data(backends.con, promoter_name=None)
+        cleaned = sanitize_floats(data)
+        _put_cached_developer_cluster("__OVERVIEW__", cleaned)
+        return JSONResponse(cleaned)
+    except Exception as e:
+        logger.exception("Error in /api/insights/developer_clusters overview: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/analytics/survival")
 def api_analytics_survival(project_id: Optional[str] = Query(None)):
     """Forecast project completion delay via Cox survival analysis."""
@@ -421,7 +515,10 @@ def api_analytics_survival(project_id: Optional[str] = Query(None)):
 
 
 @app.get("/api/analytics/pricing_trend")
-def api_analytics_pricing_trend(project_id: Optional[str] = Query(None)):
+def api_analytics_pricing_trend(
+    project_id: Optional[str] = Query(None),
+    asset_class: Optional[str] = Query("Residential"),
+):
     """Longitudinal transaction price trajectory, appreciation, and CAGR."""
     try:
         pid = int(project_id)
@@ -429,7 +526,7 @@ def api_analytics_pricing_trend(project_id: Optional[str] = Query(None)):
         raise HTTPException(status_code=400, detail="Invalid project ID")
 
     backends = AppState.get_backends()
-    res = backends.pricing_engine.get_longitudinal_pricing_trend(pid)
+    res = backends.pricing_engine.get_longitudinal_pricing_trend(pid, asset_class=asset_class or "Residential")
     return JSONResponse(sanitize_floats(res))
 
 

@@ -119,6 +119,7 @@
             <button onclick="switchTab('graph')" id="tab-graph" role="tab" aria-selected="false" aria-controls="content-graph" tabindex="-1" class="tab-btn pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-network-wired mr-2"></i>Knowledge Graph</button>
             <button onclick="switchTab('vault')" id="tab-vault" role="tab" aria-selected="false" aria-controls="content-vault" tabindex="-1" class="tab-btn pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-folder-open mr-2"></i>Document Vault</button>
             <button onclick="switchTab('search')" id="tab-search" role="tab" aria-selected="false" aria-controls="content-search" tabindex="-1" class="tab-btn pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-file-magnifying-glass mr-2"></i>Document Search</button>
+            <button onclick="switchTab('insights')" id="tab-insights" role="tab" aria-selected="false" aria-controls="content-insights" tabindex="-1" class="tab-btn pb-3 px-2 sm:px-1 whitespace-nowrap shrink-0"><i class="fa-solid fa-chart-line mr-2"></i>Insights Radar</button>
         </div>
 
         <!-- Tab 0: Explore Projects (landing) -->
@@ -764,6 +765,79 @@
                 </div>
 
                 <div id="searchResults" class="space-y-3"></div>
+            </div>
+        </div>
+
+        <!-- Tab 8: Statewide Insights Radar -->
+        <div id="content-insights" role="tabpanel" aria-labelledby="tab-insights" class="tab-content hidden space-y-6">
+            <!-- Header Section -->
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between mb-2">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-chart-line text-blue-600"></i> Statewide Real Estate Intelligence &amp; Risk Radar
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-1">Cross-project empirical analytics across 17,787 registered schemes, 1.95M unit deeds, and promoter composite networks.</p>
+                    </div>
+                    <span class="px-2.5 py-1 text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded-full">
+                        FastMCP 4.2 Intelligence Engine
+                    </span>
+                </div>
+            </div>
+
+            <!-- Section 1: Zombie Projects Radar -->
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between mb-2">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-triangle-exclamation text-rose-500"></i> Zombie Projects Radar
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-0.5">High-risk modern private schemes past completion deadline with no registered BU/NOC (&gt;=2020 cohorts; public authority schemes excluded).</p>
+                    </div>
+                    <button onclick="renderZombieRadar()" class="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                        <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh
+                    </button>
+                </div>
+                <div id="insightsZombieContainer" class="mt-4"></div>
+            </div>
+
+            <!-- Section 2: Statewide Asking Markup Spread -->
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between mb-2">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-tags text-indigo-600"></i> Statewide Asking Price Markup &amp; Micro-Market Spread
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Empirical unbooked asking price markup vs. verified booked registered deed consideration across micro-markets.</p>
+                    </div>
+                    <button onclick="renderMarkupSpread()" class="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                        <i class="fa-solid fa-arrows-rotate mr-1"></i> Refresh
+                    </button>
+                </div>
+                <div id="insightsMarkupContainer" class="mt-4"></div>
+            </div>
+
+            <!-- Section 3: Developer Portfolio & Brand Clusters -->
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between mb-2">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-network-wired text-purple-600"></i> Developer Portfolio &amp; Brand Cluster Resolution
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Partition shared promoter brands into disjoint clusters using Composite Key (c) (shared CoA licenses and bank branch IFSC anchors).</p>
+                    </div>
+                </div>
+                <!-- Search bar -->
+                <div class="flex gap-2 my-4">
+                    <input id="insightsClusterSearchInput" type="text" placeholder="Enter developer brand name (e.g. 'SHREEJI ASSOCIATES', 'SHALIGRAM')..." onkeydown="if(event.key==='Enter') searchDeveloperCluster(this.value)" class="flex-1 min-w-0 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <button onclick="searchDeveloperCluster(document.getElementById('insightsClusterSearchInput').value)" class="bg-purple-600 hover:bg-purple-700 text-white font-medium text-sm px-5 py-2 rounded-lg shadow-sm">
+                        <i class="fa-solid fa-diagram-project mr-1"></i> Partition Clusters
+                    </button>
+                    <button onclick="renderDeveloperClusters(null)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-sm px-3 py-2 rounded-lg">
+                        Overview
+                    </button>
+                </div>
+                <div id="insightsClustersContainer" class="mt-4"></div>
             </div>
         </div>
     </main>
@@ -1591,6 +1665,9 @@
             }
             if (tabId === 'compare') {
                 renderCompare();
+            }
+            if (tabId === 'insights' && typeof initInsightsTab === 'function') {
+                initInsightsTab();
             }
         }
 
@@ -2789,5 +2866,6 @@
 
         window.onload = init;
     </script>
+    <script src="/static/insights.js"></script>
 </body>
 </html>

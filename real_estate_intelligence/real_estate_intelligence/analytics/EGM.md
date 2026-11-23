@@ -1,37 +1,39 @@
 # analytics — Forensic, Pricing, ML & Survival Engines
 
 ## Overview
-Read-only quantitative analysis engines over the curated SQLite database. Seven modules: deterministic statutory auditing (`audit.py`), broker-claim fact-checking (`claims_checker.py`), institutional dossier generation (`investor_dossier.py`), a dependency-free GBDT + exact Tree SHAP hedonic pricing model (`ml_pricing.py`), unit transaction pricing benchmarks (`pricing.py`), geospatial micro-market analysis (`spatial.py`), and Cox Proportional Hazards completion-delay forecasting (`survival.py`). All ML is implemented in pure Python (no numpy/sklearn).
+Read-only quantitative analysis and statutory compliance engines over the curated SQLite database (`data/intelligence.sqlite`). Eight core modules:
+1. Deterministic statutory auditing (`audit.py`)
+2. Broker-claim fact-checking with trailing-4Q empirical benchmarks (`claims_checker.py`)
+3. Institutional 4-quadrant investor dossier generation with statutory BU verification (`investor_dossier.py`)
+4. Micro-market spatial empirical pricing (`spatial_pricing.py`)
+5. Dependency-free GBDT + exact Tree SHAP hedonic pricing model (`ml_pricing.py`)
+6. Unit transaction pricing benchmarks and trailing-4Q quarterly trends (`pricing.py`)
+7. Geospatial micro-market analysis (`spatial.py`)
+8. Cox Proportional Hazards completion-delay forecasting (`survival.py`)
 
 ## Interface
-- `ProjectAuditor(con)` with `audit_project(project_id) -> List[DiscrepancyLead]` (11 deterministic checks: checks 1-3, the separate statutory Section 4(2)(l)(D) escrow over-withdrawal block, checks 4-9, and Check 10 statutory professional credential & Form 3 CA signer coverage), `calculate_escrow_runway(project_id) -> dict`, and `audit_credential_coverage(project_id) -> dict` [audit.py:ProjectAuditor]
-- `SalesClaimVerifier(con)` with `verify_claim(project_id, claimed_rate_sqft, claimed_sold_pct, claimed_completion_date) -> dict` of `verification_checks` [claims_checker.py:SalesClaimVerifier]
-- `format_inr_cr(value)` and `generate_investor_dossier(con, project_id) -> str` (Markdown 4-quadrant dossier) [investor_dossier.py:generate_investor_dossier]
-- `DecisionTreeNode`, `RegressionTree` (`fit`, `predict_one`, `compute_shap_one`), `HedonicPricingModel` (`extract_features`, `fit`, `predict`, `explain`, `train_from_db`, `cross_validate`) [ml_pricing.py:HedonicPricingModel]
-- `PricingIntelligence(con_or_db=None, source_run_dir=None)` with `get_project_pricing_summary(project_id)` and `get_longitudinal_pricing_trend(project_id)` (`source_run_dir` defaults to `config.DEFAULT_SOURCE_RUN` and is stored but currently never read within the module) [pricing.py:PricingIntelligence]
-- `haversine_distance_km(lat1, lon1, lat2, lon2)` and `SpatialAnalytics(con_or_path=None)` with `get_nearby_projects(project_id, radius_km=3.0)` and `get_tp_scheme_summary(tp_scheme, district=None)` (TP = Town Planning scheme, a land-identifier grouping) [spatial.py:SpatialAnalytics]
-- `CompletionDelaySurvivalModel(learning_rate=0.05, max_iter=100)` with `fit`, `predict_hazard_ratio`, `predict_survival_probability`, `forecast_project_timeline`, `calculate_concordance_index`, `train_from_db`, `forecast_project_by_id` [survival.py:CompletionDelaySurvivalModel]
+- `ProjectAuditor(con)` with `audit_project(project_id) -> List[DiscrepancyLead]`, `calculate_escrow_runway(project_id) -> dict`, and `audit_credential_coverage(project_id) -> dict` [audit.py:ProjectAuditor]
+- `SalesClaimVerifier(con)` with `verify_claim(project_id, claimed_rate_sqft, claimed_sold_pct=None, claimed_completion_date=None, asset_class="Residential") -> dict` [claims_checker.py:SalesClaimVerifier]
+- `generate_investor_dossier(con, project_id) -> str` — Markdown 4-quadrant dossier with statutory BU verification [investor_dossier.py:generate_investor_dossier]
+- `SpatialEmpiricalPricer(con)` with `benchmark_project(project_id, radius_km=2.0) -> dict` — 2km/5km/taluka spatial medians and spreads [spatial_pricing.py:SpatialEmpiricalPricer]
+- `HedonicPricingModel` with `extract_features`, `fit`, `predict`, `explain`, `train_from_db`, `cross_validate` [ml_pricing.py:HedonicPricingModel]
+- `PricingIntelligence(con_or_db=None)` with `get_project_pricing_summary(project_id, asset_class="Residential")` and `get_longitudinal_pricing_trend(project_id, asset_class="Residential")` [pricing.py:PricingIntelligence]
+- `SpatialAnalytics(con_or_path=None)` with `get_nearby_projects(project_id, radius_km=3.0)` and `get_tp_scheme_summary(tp_scheme, district=None)` [spatial.py:SpatialAnalytics]
+- `CompletionDelaySurvivalModel` with `fit`, `predict_hazard_ratio`, `predict_survival_probability`, `forecast_project_timeline`, `calculate_concordance_index`, `train_from_db`, `forecast_project_by_id` [survival.py:CompletionDelaySurvivalModel]
 
 ## Invariants
-- Audit check thresholds are fixed in code: velocity ratio (`velocity_ratio` = engineer-progress % ÷ time-elapsed %, computed in `db/loader.py:166`; engineer progress is the `enggScore` field of the portal's quarterly progress reports) `< 0.75` = HIGH / `< 0.90` = MEDIUM (only when `time_elapsed_pct > 10.0`); escrow closing balance `< 50,000` INR with engineer progress `< 90%` = HIGH; statutory escrow over-withdrawal beyond `estimated_cost * progress% * 1.05` = CRITICAL (RERA Section 4(2)(l)(D) — the section mandating the 70% retention escrow; see [GLOSSARY.md](../../../GLOSSARY.md)); Form 5 (the statutory annual chartered-accountant audit report; see [GLOSSARY.md](../../../GLOSSARY.md)) pending years hard-coded to `'2022-23'`, `'2023-24'`, `'2024-25'`; the expired-completion check compares against the literal date `"2026-10-15"`; Check 10 verifies presence of signed Form 3 CA certificates in `documents_catalog` for projects with financial activity (severity `HIGH`), and flags unassigned or unverified (missing license number) architects and structural engineers in `professionals` (severity `MEDIUM`) [audit.py:audit_project]
-- `audit_project` emits severities from the set `HIGH`, `MEDIUM`, `CRITICAL`, `INFO` (note: `CRITICAL` is outside the vocabulary annotated on `models.schema.DiscrepancyLead`) [audit.py:audit_project]
-- `calculate_escrow_runway` assumes a 3-month gap between the first and last financial filings for monthly burn, falls back to `incurred_cost / 12` when fewer than two filings carry `incurred_and_paid`, and labels insolvency risk `CRITICAL` (< 3 months runway and engineer progress < 95%), `MODERATE` (< 6 months), else `LOW`; escrow is always `banks.account_type = 1` [audit.py:calculate_escrow_runway]
-- Claim verification thresholds: claimed rate `> +15%` vs. median = `EXAGGERATED / PREMIUM`, `< -10%` = `DISCOUNTED`; claimed sold % exceeding the filing's official booked percentage (`booking_rate_pct`) by `> 10` points = `ARTIFICIAL SCARCITY`; handover date earlier than the registered date = `AGGRESSIVE SALES PROMISE` [claims_checker.py:verify_claim]
-- `generate_investor_dossier` raises `ValueError` for an unknown project ID and composes `ProjectAuditor.audit_project` plus `KnowledgeGraph.trace_contagion_risk` (contagion = any shared entity — professionals, banks, promoters, or prior projects — linking this project to complaint-bearing sister projects; see [../graph/EGM.md]) [investor_dossier.py:generate_investor_dossier]
-- `HedonicPricingModel.predict` clamps output to a minimum of `500.0` INR/sq.ft ("statutory physical rate lower bound"); `explain` normalizes SHAP values so `base_value + sum(shap) == predicted` and reports `efficiency_check_passed` [ml_pricing.py:predict], [ml_pricing.py:explain]
-- `HedonicPricingModel.train_from_db` trains only on `unit_transactions` rows with `status = 'BOOKED' AND rate_per_sqft > 0`, guarding legacy schemas via `PRAGMA table_info` before referencing `asset_class`; `fit`/`cross_validate` raise `ValueError` on empty or insufficient data (`rows < k_folds * 2`) [ml_pricing.py:train_from_db], [ml_pricing.py:cross_validate]
-- Feature encoding defaults: unknown district falls back to `"Ahmedabad"`; default latitude `23.0`, longitude `72.5`; one-hot features `asset_Retail/Office/Warehouse/Residential` and `district_Ahmedabad/Gandhinagar` [ml_pricing.py:extract_features]
-- `PricingIntelligence` treats a `.sqlite` suffix or existing file path as a database and falls back to [../config.py:DEFAULT_DB_PATH] for any other argument (e.g., a directory); percentile stats use index math `p25 = s[n//4]`, `median = s[n//2]`, `p75 = s[3n//4]` [pricing.py:PricingIntelligence], [pricing.py:stats_dict]
-- CAGR assumes 0.25 years per quarter with a minimum horizon of 0.25 years [pricing.py:get_longitudinal_pricing_trend]
-- `SpatialAnalytics.get_nearby_projects` returns an error dict when the origin project lacks GPS coordinates; "delayed" nearby projects are those with `velocity_ratio < 0.75`; Earth radius is fixed at `6371.0` km [spatial.py:get_nearby_projects], [spatial.py:haversine_distance_km]
-- The survival model uses a fixed covariate order `[velocity_ratio, incurred_cost_ratio, has_complaints, default_quarters]`; event is defined as engineer progress `>= 99.0` or `"Approved"` in `bu_status` (BU = Building Use permission); durations are computed against `as_of_date_str` (default `"2026-10-15"`); risk labels are `ON_TRACK`, `MODERATE_DELAY` (p50 slip <= 4 months), `HIGH_DELAY_RISK`; exponent scores are clipped to `[-20, 20]` to prevent overflow [survival.py:train_from_db], [survival.py:forecast_project_timeline], [survival.py:fit]
-- Survival percentile search scans 0.1-month steps up to 150 months; the returned `survival_curve` spans 0-123 months in 3-month steps (`range(0, 125, 3)`) [survival.py:forecast_project_timeline]
+- Ground Truth BU Verification: `projects.bu_status` is discontinued; BU status is determined strictly via `project_summaries.has_bu_noc` and `noc_bu_records.bu_check == 'YES'` [investor_dossier.py:generate_investor_dossier]
+- Cohort-Aware Delivery Default Badging: modern schemes (completion date >= 2020) past due without BU are explicitly badged `🔴 EXPIRED_WITHOUT_BU (+X months overdue)` with statutory delivery default alerts; pre-2020 schemes are flagged `Legacy Pre-2020 Grandfathered`; public authority schemes are labeled `Govt Authority Scheme` [investor_dossier.py:generate_investor_dossier]
+- Trailing-4Q Pricing Benchmarks: `verify_claim` and `get_pricing_appreciation_trend` default to `asset_class="Residential"` (matching `"Commercial"` or `"Residential"` case-insensitively, and treating `"All"`/`None` as un-filtered). Claims are evaluated against trailing-4Q booked deed medians if >= 3 deeds exist, falling back to lifetime medians with `stale_deed_warning: true` if transactions are older than 18 months [claims_checker.py:verify_claim], [pricing.py:get_project_pricing_summary]
+- Spatial Pricing Hierarchy: `SpatialEmpiricalPricer` evaluates concentric radii (2km -> 5km -> taluka) to achieve <100ms pricing benchmarks backed by empirical registered deeds [spatial_pricing.py:SpatialEmpiricalPricer]
+- Deterministic Audit Invariants: escrow velocity ratio (<0.75 HIGH / <0.90 MEDIUM), Section 4(2)(l)(D) 70% retention over-withdrawal check, and Form 3/5 CA coverage [audit.py:audit_project]
 
 ## Side Effects
-- Read-only over curated rows: all modules query the shared SQLite connection and write no curated rows (a module that owns its connection applies schema DDL via `get_connection` at construction) [audit.py], [pricing.py], [spatial.py], [survival.py]
-- `PricingIntelligence` and `SpatialAnalytics` open their own connection to [../config.py:DEFAULT_DB_PATH] when constructed without one (and own/close it); when passed an existing connection they never close it [pricing.py:PricingIntelligence], [spatial.py:SpatialAnalytics]
-- `generate_investor_dossier` returns a Markdown string; it performs no disk or network I/O [investor_dossier.py:generate_investor_dossier]
-- Lazy model training inside `mcp`/`ui` layers (`train_from_db`) performs full-table scans of `unit_transactions` / `projects` on first call [ml_pricing.py:train_from_db], [survival.py:train_from_db]
+- Strictly read-only operations across all analytics modules; no modifications made to `data/intelligence.sqlite` [audit.py], [claims_checker.py], [investor_dossier.py], [pricing.py]
+- In-memory model caching: `HedonicPricingModel` and `CompletionDelaySurvivalModel` cache fitted weights in memory during server lifespan [ml_pricing.py], [survival.py]
 
 ## Verification
-- Run: `python -m pytest real_estate_intelligence/tests`
+- Run test suites:
+  - `python -m pytest real_estate_intelligence/tests/test_phase1_5_polish.py`
+  - `python -m pytest real_estate_intelligence/tests/test_spatial_pricing_and_audit.py`
+  - `python -m pytest real_estate_intelligence/tests/test_claims_and_pricing.py`

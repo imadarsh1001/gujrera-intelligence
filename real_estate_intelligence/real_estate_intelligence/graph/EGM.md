@@ -1,27 +1,29 @@
 # graph — Cross-Entity Knowledge Graph & Contagion Tracing
 
 ## Overview
-Relational knowledge-graph engine over the curated SQLite database. `KnowledgeGraph` materializes `graph_nodes` / `graph_edges` tables from the `projects`, `promoters`, `professionals`, `banks`, and `previous_projects` tables, then answers cross-project overlap queries ("which projects share an architect/engineer/CA/bank?") and traces contagion risk to complaint-bearing sister schemes.
+Relational knowledge-graph engine and promoter portfolio resolution over `data/intelligence.sqlite`. Materializes `graph_nodes` / `graph_edges` tables, resolves promoter portfolios into disjoint clusters via Composite Key (c) (shared verified professional license or bank branch IFSC anchor), answers cross-project overlap queries ("which projects share an architect/engineer/CA/bank?"), and traces contagion risk to complaint-bearing sister schemes.
 
 ## Interface
-- `KnowledgeGraph(con)` — constructor creates (or reuses) the `graph_nodes` and `graph_edges` tables with indexes `idx_edge_dst` and `idx_edge_src` [network.py:KnowledgeGraph]
-- `build_graph() -> Dict[str, int]` — rebuilds nodes/edges from curated tables and returns total counts `{"nodes": int, "edges": int}` [network.py:build_graph]
-- `find_shared_entities(project_id) -> List[Dict[str, Any]]` — other projects sharing an architect, engineer, CA, or bank; rows carry `connection_type`, `shared_entity_name`, `entity_kind`, `linked_project_id`, `linked_project_name` [network.py:find_shared_entities]
-- `trace_contagion_risk(project_id) -> List[Dict[str, Any]]` — multi-hop lead generation over shared entities [network.py:trace_contagion_risk]
+- `KnowledgeGraph(con)` — Constructor initializes `graph_nodes` and `graph_edges` tables with indexes `idx_edge_dst` and `idx_edge_src` [network.py:KnowledgeGraph]
+- `resolve_promoter_portfolio(con, project_id=None, promoter_name=None) -> Dict[str, Any]` — Partitions developer portfolios into disjoint `clusters[]` via Composite Key (c) [network.py:resolve_promoter_portfolio]
+- `build_graph() -> Dict[str, int]` — Rebuilds nodes/edges from curated tables with Composite Key promoter anchors [network.py:build_graph]
+- `find_shared_entities(project_id) -> List[Dict[str, Any]]` — Returns projects sharing an architect, engineer, CA, or bank [network.py:find_shared_entities]
+- `trace_contagion_risk(project_id) -> List[Dict[str, Any]]` — Multi-hop lead generation linking projects to complaint-bearing sister schemes [network.py:trace_contagion_risk]
+- `get_ego_network(project_id, depth=2, max_nodes=250) -> Dict[str, Any]` — Subgraph scoped to a project ego-network [network.py:get_ego_network]
 
 ## Invariants
-- Node IDs follow fixed formats: `project:{id}`, `promoter:{id}`, `professional:{role}:{normalized_name}`, `bank:{normalized_bank_name}`, `prior_project:{id or alphanumeric name}` [network.py:build_graph]
-- Edge relations are fixed: `DEVELOPED_BY`, `DESIGNED_BY`, `ENGINEERED_BY`, `AUDITED_BY`, `CONSTRUCTED_BY`, `ESCROW_AT`, `PRIOR_PORTFOLIO`, with `ASSOCIATED_WITH` as the fallback for unknown professional roles [network.py:build_graph]
-- `PRIOR_PORTFOLIO` edges exclude self-links: `previous_projects` rows whose `linked_project_id` equals the owning `project_id` (or is NULL) produce no prior-project node or edge [network.py:build_graph]
-- `graph_edges` primary key is `(src_id, relation, dst_id)`; both insert helpers use `INSERT OR REPLACE`, so `build_graph()` is idempotent over the same data [network.py:_insert_edge]
-- `trace_contagion_risk` only flags linked projects that have rows in `applications` with `application_type = 'Complaint'`; every lead is emitted with `risk_type = 'PROFESSIONAL_LINKED_COMPLAINT'` and `severity = 'MEDIUM'` [network.py:trace_contagion_risk]
-- Node `kind` values are `Project`, `Promoter`, `Bank`, `PriorProject`, and the capitalized professional role (`Architect`, `Engineer`, `Ca`, `Contractor`) — note the `Ca` casing, which the UI color map also keys on [network.py:build_graph]
-- Node and edge `properties_json` columns store metadata: professional nodes store `role`, `firm_name`, `license_or_reg_no`, and boolean `is_verified`; project nodes store `registration_number` and `district`; bank nodes store `branch_name`; professional edges store `role`, `firm_name`, and `license_or_reg_no` [network.py:build_graph]
+- Composite Key (c) Partitioning: developer portfolios are partitioned into disjoint clusters using shared Council of Architecture / engineer licenses and bank branch IFSC anchors; projects are never linked on bare `bank_name` [network.py:resolve_promoter_portfolio]
+- Anchor Sanitization & PII Safety: raw licenses are sanitized via `redact_value("license_or_reg_no", val)`; any token containing `[REDACTED`, `"NA"`, `"-"`, `"0"`, or shorter than 3 characters is excluded from edge construction and output [network.py:resolve_promoter_portfolio]
+- Partitioned Multi-Cluster Labeling: when queried by `promoter_name` without `project_id` and multiple clusters are found (`len(clusters) > 1`), top-level `linkage_confidence` is strictly set to `"PARTITIONED_MULTI_CLUSTER"` (never `"HIGH"`) [network.py:resolve_promoter_portfolio]
+- Token Budget Ceiling: `resolve_promoter_portfolio` caps output at 4,000 tokens (16,000 characters) via compact cluster projections to prevent context explosion [network.py:resolve_promoter_portfolio]
+- No `promoter:None` Explosion: projects without an official `promoter_id` derive localized composite nodes or remain singletons [network.py:build_graph]
 
 ## Side Effects
-- Creates `graph_nodes` / `graph_edges` tables in the passed SQLite connection and commits on construction and after `build_graph()` [network.py:_init_graph_tables]
-- `build_graph()` rewrites graph rows (`INSERT OR REPLACE`) in the shared database; it does not create a separate database file (the [../config.py:DEFAULT_GRAPH_DB_PATH] constant is not referenced by this module) [network.py:build_graph]
-- Contagion tracing reads `applications` but never mutates curated tables [network.py:trace_contagion_risk]
+- Creates `graph_nodes` / `graph_edges` tables if absent upon `KnowledgeGraph` instantiation [network.py:_init_graph_tables]
+- Zero writes to primary real estate tables (`projects`, `unit_transactions`, `project_summaries`, etc.) [network.py]
 
 ## Verification
-- Run: `python -m pytest real_estate_intelligence/tests`
+- Run test suites:
+  - `python -m pytest real_estate_intelligence/tests/test_phase1_5_polish.py`
+  - `python -m pytest real_estate_intelligence/tests/test_security_redaction_and_graph.py`
+  - `python -m pytest real_estate_intelligence/tests/test_graph_network.py`

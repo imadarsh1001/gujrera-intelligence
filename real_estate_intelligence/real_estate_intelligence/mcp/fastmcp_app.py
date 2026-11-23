@@ -24,15 +24,45 @@ Exposes:
 """
 
 import json
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Skill
+from fastmcp.skills.provider import SkillCatalogProvider
 
 from .envelope import wrap_tool_response
 from .server import RealEstateIntelligenceMCP
 
 # Instantiate FastMCP server
 mcp = FastMCP("GujRERA Sovereign Real Estate Intelligence", version="1.0.0")
+
+
+def _find_skills_dir() -> Optional[Path]:
+    override = os.environ.get("GUJRERA_SKILLS_DIR")
+    if override and Path(override).exists():
+        return Path(override).resolve()
+    for candidate in [Path.cwd(), *Path(__file__).resolve().parents]:
+        s_path = candidate / ".agents" / "skills"
+        if s_path.exists():
+            return s_path.resolve()
+    return None
+
+
+# Mount explicitly vetted GujRERA Agent Skills
+_skills_dir = _find_skills_dir()
+if _skills_dir and _skills_dir.exists():
+    _target_skills = ["buyer-due-diligence", "market-screening-analyst", "pilot-forensic-auditor"]
+    _loaded_skills = []
+    for _s_name in _target_skills:
+        _s_path = _skills_dir / _s_name
+        if _s_path.exists() and (_s_path / "SKILL.md").exists():
+            try:
+                _loaded_skills.append(Skill.from_directory(_s_path))
+            except Exception:
+                pass
+    if _loaded_skills:
+        mcp.add_provider(SkillCatalogProvider(_loaded_skills))
 
 # Internal server delegate
 _mcp_server: Optional[RealEstateIntelligenceMCP] = None
@@ -202,14 +232,18 @@ def get_spatial_pricing_benchmark(
 
 
 @mcp.tool()
-def get_pricing_appreciation_trend(project_id: int) -> dict:
+def get_pricing_appreciation_trend(
+    project_id: int,
+    asset_class: Optional[str] = "Residential",
+) -> dict:
     """Calculate historical quarterly registered transaction rate velocity, longitudinal appreciation, and CAGR.
 
     Args:
         project_id: The GujRERA project registration ID.
+        asset_class: Optional asset class filter (default 'Residential', or 'Commercial', 'All').
     """
     srv = get_server()
-    res = srv.get_pricing_appreciation_trend(project_id)
+    res = srv.get_pricing_appreciation_trend(project_id, asset_class=asset_class)
     return wrap_tool_response(
         res,
         project_ids=[project_id],
@@ -224,6 +258,7 @@ def verify_sales_claim(
     claimed_rate: Optional[float] = None,
     claimed_sold_pct: Optional[float] = None,
     claimed_completion_date: Optional[str] = None,
+    asset_class: Optional[str] = "Residential",
 ) -> dict:
     """Verify broker or developer marketing sales claims against official sworn RERA deed disclosures.
 
@@ -232,6 +267,7 @@ def verify_sales_claim(
         claimed_rate: Claimed price per square foot (INR/sq.ft.).
         claimed_sold_pct: Claimed percentage of inventory sold (0.0 to 100.0).
         claimed_completion_date: Claimed completion date (YYYY-MM-DD).
+        asset_class: Optional asset class filter (default 'Residential', or 'Commercial', 'All').
     """
     srv = get_server()
     res = srv.verify_sales_claim(
@@ -239,6 +275,7 @@ def verify_sales_claim(
         claimed_rate=claimed_rate,
         claimed_sold_pct=claimed_sold_pct,
         claimed_completion_date=claimed_completion_date,
+        asset_class=asset_class,
     )
     return wrap_tool_response(
         res,

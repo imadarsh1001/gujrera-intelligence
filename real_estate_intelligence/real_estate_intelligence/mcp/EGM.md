@@ -1,35 +1,49 @@
-# mcp — Model Context Protocol Tool Server
+# mcp — Model Context Protocol Gateway & Tool Server
 
 ## Overview
-`RealEstateIntelligenceMCP` exposes the analytics stack as named, read-only research tools for AI agents (the `agent` package's copilot calls these methods directly via `getattr`). It composes `DocumentSearchEngine`, `KnowledgeGraph`, `ProjectAuditor`, and `SpatialAnalytics` eagerly, and lazily trains the `HedonicPricingModel` and `CompletionDelaySurvivalModel` on first use. There is no network listener here — "MCP" refers to the tool-calling contract, not a running server process.
+The `mcp` package provides standard Model Context Protocol (MCP 2024-11-05 / FastMCP 4.2.4) capabilities for AI agents running locally or remotely (e.g., Google Antigravity, Claude Code, Cursor). It exposes 14 consolidated tools (11 statewide core + 3 pilot-gated with explicit `SKIPPED_UNINGESTED` provenance), 3 dynamic `rera://` resources, and a `SkillCatalogProvider` mounting domain skills (`buyer-due-diligence`, `market-screening-analyst`, `pilot-forensic-auditor`). All outputs are formatted in a standard structured envelope (`{data, data_coverage, provenance, pagination, token_estimate}`) and capped at 6,000 tokens with centralized in-memory PII scrubbing (`db/redaction.py`).
 
 ## Interface
-Public methods on `RealEstateIntelligenceMCP(db_path=None)` [server.py:RealEstateIntelligenceMCP]:
-- `get_project_dossier(project_id) -> str` — full 4-quadrant Markdown dossier via `generate_investor_dossier` [server.py:get_project_dossier]
-- `query_inventory_breakdown(project_id) -> List[Dict]` — block-level inventory rows from `inventory_blocks` [server.py:query_inventory_breakdown]
-- `search_document_evidence(query, project_id=None, doc_type=None, limit=5) -> List[Dict]` — BM25 FTS search [server.py:search_document_evidence]
-- `trace_entity_network(project_id) -> dict` — `{"project_id", "shared_entities", "contagion_risk_leads"}` [server.py:trace_entity_network]
-- `audit_discrepancies(project_id) -> List[Dict]` — serialized `DiscrepancyLead` rows [server.py:audit_discrepancies]
-- `get_escrow_health(project_id) -> dict` — splits `banks` into `escrow_70_percent_accounts` (type 1) and `collection_100_percent_accounts` (type 2), adds `cash_flow_summary` from the latest `finances` row and `low_liquidity_flag` (escrow closing balance < 50,000) [server.py:get_escrow_health]
-- `get_land_records(project_id) -> dict` — TP scheme / final plot / survey / GPS plus `block_clearances` from `noc_bu_records` [server.py:get_land_records]
-- `get_regulatory_radar(project_id) -> dict` — complaints/alterations/extension counters and `form5_annual_audits` [server.py:get_regulatory_radar]
-- `compare_projects(project_ids) -> List[Dict]` — side-by-side comparison projection over `projects` [server.py:compare_projects]
-- `predict_pricing_benchmark(project_id, asset_class="Residential", carpet_area_sqft=1200.0) -> dict` — SHAP-explained hedonic valuation [server.py:predict_pricing_benchmark]
-- `forecast_completion_delay(project_id) -> dict` — Cox survival forecast via `forecast_project_by_id` [server.py:forecast_completion_delay]
-- `calculate_escrow_runway(project_id) -> dict` — delegated to `ProjectAuditor.calculate_escrow_runway` [server.py:calculate_escrow_runway]
-- `get_spatial_density(project_id, radius_km=3.0) -> dict` — delegated to `SpatialAnalytics.get_nearby_projects` [server.py:get_spatial_density]
+- `mcp: FastMCP` — Main FastMCP application instance configured with `streamable_http` and `stdio` transports [fastmcp_app.py:mcp]
+- `SkillCatalogProvider([Skill.from_directory(...)])` — Isolated domain skill provider mounting skills from `.agents/skills/` [fastmcp_app.py:SkillCatalogProvider]
+- Standard Envelope Wrapper `_wrap_envelope(data, data_coverage, source, query_hint, total_items, limit, offset)` [fastmcp_app.py:_wrap_envelope]
+- Public Tools on `FastMCP` (14 consolidated):
+  - `search_projects(query, district=None, limit=20, offset=0)` — Statewide FTS and facet exploration [fastmcp_app.py:search_projects]
+  - `get_project_dossier(project_id)` — 4-quadrant executive dossier with BU check and overdue badging [fastmcp_app.py:get_project_dossier]
+  - `compare_projects(project_ids)` — Side-by-side metric comparison across up to 10 projects [fastmcp_app.py:compare_projects]
+  - `query_unit_transactions(project_id, status="ALL", limit=100, offset=0)` — Individual unit deeds [fastmcp_app.py:query_unit_transactions]
+  - `get_spatial_pricing_benchmark(project_id, radius_km=2.0)` — Spatial empirical pricing pricer [fastmcp_app.py:get_spatial_pricing_benchmark]
+  - `get_pricing_appreciation_trend(project_id, asset_class="Residential")` — Trailing-4Q and quarterly CAGR trend [fastmcp_app.py:get_pricing_appreciation_trend]
+  - `verify_sales_claim(project_id, claimed_rate_sqft, asset_class="Residential")` — Trailing-4Q empirical claim verification [fastmcp_app.py:verify_sales_claim]
+  - `get_spatial_density(project_id, radius_km=3.0)` — Geographic micro-market cluster absorption [fastmcp_app.py:get_spatial_density]
+  - `get_land_records(project_id)` — TP scheme, final plot, survey, GPS, and block clearances [fastmcp_app.py:get_land_records]
+  - `trace_entity_network(project_id)` — Promoter, professional, and bank entity graph connections [fastmcp_app.py:trace_entity_network]
+  - `get_promoter_portfolio(project_id=None, promoter_name=None)` — Composite Key (c) disjoint cluster resolution [fastmcp_app.py:get_promoter_portfolio]
+  - `audit_discrepancies(project_id)` — Pilot-gated statutory cross-filing discrepancy detector [fastmcp_app.py:audit_discrepancies]
+  - `get_escrow_and_finances(project_id)` — Pilot-gated 70% escrow segregation and cash-flow health [fastmcp_app.py:get_escrow_and_finances]
+  - `get_regulatory_radar(project_id)` — Pilot-gated Form 1/3/5 audit radar and complaints [fastmcp_app.py:get_regulatory_radar]
+- Dynamic Resources on `FastMCP`:
+  - `rera://project/{project_id}/summary` — Core project overview [fastmcp_app.py:resource_project_summary]
+  - `rera://project/{project_id}/pricing` — Longitudinal pricing summary [fastmcp_app.py:resource_project_pricing]
+  - `rera://project/{project_id}/compliance` — BU status and statutory flags [fastmcp_app.py:resource_project_compliance]
+- Backward-Compatible Python Adapter:
+  - `RealEstateIntelligenceMCP(db_path=None)` — Direct in-process analytics wrapper [server.py:RealEstateIntelligenceMCP]
 
 ## Invariants
-- The class is documented and used as read-only: no method inserts or updates database rows [server.py:RealEstateIntelligenceMCP]
-- `predict_pricing_benchmark` trains `HedonicPricingModel(n_estimators=25, max_depth=3)` once and caches it in `_pricing_model`; `forecast_completion_delay` likewise lazily caches `_survival_model` — first calls pay a full training scan, and both lazy initializations are double-checked under a shared `threading.Lock` (`_model_lock`) so concurrent first calls under the dashboard's threaded server train exactly once [server.py:predict_pricing_benchmark], [server.py:forecast_completion_delay]
-- Constructor signature is `db_path`, but any `sqlite3.Connection` passed as `db_path` is returned unchanged by `db.database.get_connection`, so the UI can share its live connection [server.py:RealEstateIntelligenceMCP]
-- `get_escrow_health` liquidity threshold is `< 50,000` INR closing balance on type-1 accounts [server.py:get_escrow_health]
-- Unknown project IDs produce `{"error": f"Project {project_id} not found..."}` dicts (or a `ValueError` propagated from the dossier generator) rather than exceptions for most tools [server.py:get_land_records], [server.py:get_regulatory_radar]
+- Zero DB mutations: all tool calls and resource reads execute strictly read-only queries against `data/intelligence.sqlite` [fastmcp_app.py], [server.py]
+- Centralized PII Redaction: every tool response payload passes through `redact_payload()` before returning to clients [fastmcp_app.py:_wrap_envelope]
+- Response Budget Ceiling: all tool payloads enforce a strict 6,000 token upper bound (24,000 characters) to prevent agent context window explosion [fastmcp_app.py:_enforce_token_budget]
+- Data Coverage Transparency: pilot-gated tools return `"data_coverage": "SKIPPED_UNINGESTED"` with a clear warning whenever queried on uningested non-pilot projects [fastmcp_app.py]
+- Skill Catalog Isolation: FastMCP uses `SkillCatalogProvider([Skill.from_directory(...)])` to mount verified skills without scanning unformatted workspace directories [fastmcp_app.py]
 
 ## Side Effects
-- Opens a SQLite connection via `db.database.get_connection(db_path)` at construction (default [../config.py:DEFAULT_DB_PATH]); the connection lives for the object's lifetime and is not closed by this class [server.py:RealEstateIntelligenceMCP]
-- Indirect writes during construction: `get_connection` applies pragmas and `init_schema`, and `KnowledgeGraph.__init__` creates `graph_nodes`/`graph_edges` tables if absent [server.py:RealEstateIntelligenceMCP]
-- Lazy training on first `predict_pricing_benchmark` / `forecast_completion_delay` call reads the full `unit_transactions` / `projects` tables (CPU-heavy, no writes); serialized by `_model_lock` across threads [server.py:predict_pricing_benchmark], [server.py:forecast_completion_delay]
+- Opens a read-only SQLite connection via `db.database.get_connection()` on startup [fastmcp_app.py]
+- Zero stdout pollution on stdio transport: all logging routes strictly to stderr or file [fastmcp_app.py]
+- FastMCP HTTP endpoint mounted at `/mcp` inside `api/index.py` via `combine_lifespans` [api/index.py:app]
 
 ## Verification
-- Run: `python -m pytest real_estate_intelligence/tests`
+- Run test suites:
+  - `python -m pytest real_estate_intelligence/tests/test_fastmcp_gateway.py`
+  - `python -m pytest real_estate_intelligence/tests/test_phase1_mcp.py`
+  - `python -m pytest real_estate_intelligence/tests/test_phase1_5_polish.py`
+

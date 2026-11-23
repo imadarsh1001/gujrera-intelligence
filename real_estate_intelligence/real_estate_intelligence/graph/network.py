@@ -166,6 +166,10 @@ def resolve_promoter_portfolio(
     project_ids = [c["project_id"] for c in raw_candidates]
     prof_licenses: Dict[int, Set[str]] = {}
     bank_anchors: Dict[int, Set[str]] = {}
+    INVALID_ANCHOR_TOKENS: Set[str] = {
+        "", "NA", "N/A", "NONE", "NULL", "0", "-", "--", "N.A", "N.A.", "UNKNOWN",
+        "NOT APPLICABLE", "NOT APPLIED", "REDACTED", "NOT AVAILABLE"
+    }
 
     if project_ids:
         placeholders = ",".join("?" for _ in project_ids)
@@ -175,88 +179,201 @@ def resolve_promoter_portfolio(
             project_ids,
         )
         for pid_val, lic in cur.fetchall():
-            clean_l = "".join(c for c in str(lic).upper() if c.isalnum())
-            if clean_l and "[REDACTED" not in clean_l:
+            scrubbed_l = redact_value("license_or_reg_no", lic)
+            if not scrubbed_l or "[REDACTED" in str(scrubbed_l):
+                continue
+            clean_l = "".join(c for c in str(scrubbed_l).upper() if c.isalnum())
+            if clean_l and clean_l not in INVALID_ANCHOR_TOKENS and len(clean_l) >= 3:
                 prof_licenses.setdefault(pid_val, set()).add(clean_l)
 
         cur.execute(
-            f"SELECT project_id, ifsc_code, branch_name FROM banks "
-            f"WHERE project_id IN ({placeholders}) AND (ifsc_code IS NOT NULL OR branch_name IS NOT NULL)",
+            f"SELECT project_id, ifsc_code, bank_name, branch_name FROM banks "
+            f"WHERE project_id IN ({placeholders}) AND (ifsc_code IS NOT NULL OR (bank_name IS NOT NULL AND branch_name IS NOT NULL))",
             project_ids,
         )
-        for pid_val, ifsc, branch in cur.fetchall():
-            b_key = "".join(c for c in str(ifsc or branch).upper() if c.isalnum())
-            if b_key:
-                bank_anchors.setdefault(pid_val, set()).add(b_key)
+        for pid_val, ifsc, bname, branch in cur.fetchall():
+            clean_ifsc = "".join(c for c in str(ifsc or "").upper() if c.isalnum())
+            if clean_ifsc and clean_ifsc not in INVALID_ANCHOR_TOKENS and len(clean_ifsc) >= 4 and "[REDACTED" not in clean_ifsc:
+                bank_anchors.setdefault(pid_val, set()).add(f"IFSC:{clean_ifsc}")
+            elif bname and branch:
+                # Require both bank_name and branch_name - NEVER bare bank_name
+                clean_bn = "".join(c for c in str(bname).upper() if c.isalnum())
+                clean_br = "".join(c for c in str(branch).upper() if c.isalnum())
+                if (
+                    clean_bn and clean_br
+                    and clean_bn not in INVALID_ANCHOR_TOKENS
+                    and clean_br not in INVALID_ANCHOR_TOKENS
+                    and len(clean_bn) >= 3 and len(clean_br) >= 3
+                    and "[REDACTED" not in clean_bn and "[REDACTED" not in clean_br
+                ):
+                    bank_anchors.setdefault(pid_val, set()).add(f"BRANCH:{clean_bn}_{clean_br}")
 
-    # Compute shared anchors across candidate projects
-    all_shared_lics: Set[str] = set()
-    all_shared_banks: Set[str] = set()
+    # Build adjacency graph between candidate projects via Composite Key (c)
+    cand_by_id = {c["project_id"]: c for c in raw_candidates}
+    adj: Dict[int, Set[int]] = {pid: set() for pid in project_ids}
+
     for i in range(len(project_ids)):
         for j in range(i + 1, len(project_ids)):
             p1, p2 = project_ids[i], project_ids[j]
+            c1, c2 = cand_by_id[p1], cand_by_id[p2]
+            
             shared_l = prof_licenses.get(p1, set()) & prof_licenses.get(p2, set())
             shared_b = bank_anchors.get(p1, set()) & bank_anchors.get(p2, set())
-            all_shared_lics.update(shared_l)
-            all_shared_banks.update(shared_b)
+            shared_prom_id = (
+                c1.get("promoter_id") is not None
+                and c2.get("promoter_id") is not None
+                and c1["promoter_id"] == c2["promoter_id"]
+            )
 
-    # 3. Linkage confidence scoring
-    if len(raw_candidates) <= 1:
-        linkage_confidence = "MEDIUM" if homonym_warning else "HIGH"
-    elif all_shared_lics or all_shared_banks or (target_prom_id is not None and len(raw_candidates) > 1):
-        linkage_confidence = "HIGH"
-    elif homonym_warning:
-        linkage_confidence = "LOW"
-    else:
-        linkage_confidence = "MEDIUM"
+            if shared_l or shared_b or shared_prom_id:
+                adj[p1].add(p2)
+                adj[p2].add(p1)
 
-    # 4. Compute modern_expired_no_bu_count
-    # Scheduled completion year >= 2020, expired, has_bu_noc == 0, excluding government authority schemes
-    modern_expired_no_bu_count = 0
+    # Connected components (disjoint clusters)
+    visited: Set[int] = set()
+    clusters: List[Dict[str, Any]] = []
+    cluster_idx = 1
     ref_today = datetime.now(timezone.utc).date().isoformat()
 
-    for cand in raw_candidates:
-        c_pname = str(cand.get("promoter_name") or "")
-        c_name = str(cand.get("name") or "")
-        c_reg = str(cand.get("registration_number") or "")
-        full_text = f"{c_pname} {c_name} {c_reg}".upper()
-
-        # Check if govt authority scheme
-        is_govt = any(g in full_text for g in GOVT_AUTHORITY_KEYWORDS)
-        if is_govt:
+    for pid in project_ids:
+        if pid in visited:
             continue
+        comp_pids: List[int] = []
+        q = [pid]
+        visited.add(pid)
+        while q:
+            curr = q.pop(0)
+            comp_pids.append(curr)
+            for neighbor in adj.get(curr, set()):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    q.append(neighbor)
 
-        c_date = str(cand.get("completion_date") or "").strip()
-        year_match = re.search(r"\b(20\d\d)\b", c_date)
-        if not year_match:
-            continue
-        c_year = int(year_match.group(1))
+        comp_pids.sort()
+        comp_projects = [cand_by_id[p] for p in comp_pids]
+        
+        # Calculate cluster-specific shared anchors
+        cl_shared_lics: Set[str] = set()
+        cl_shared_banks: Set[str] = set()
+        for i in range(len(comp_pids)):
+            for j in range(i + 1, len(comp_pids)):
+                p1, p2 = comp_pids[i], comp_pids[j]
+                cl_shared_lics.update(prof_licenses.get(p1, set()) & prof_licenses.get(p2, set()))
+                cl_shared_banks.update(bank_anchors.get(p1, set()) & bank_anchors.get(p2, set()))
 
-        if c_year >= 2020:
-            # Check if expired
-            is_expired = False
-            if c_date and c_date < ref_today:
-                is_expired = True
-            elif cand.get("project_status") in ("EXPIRED", "REVOKED"):
-                is_expired = True
+        # Calculate cluster-specific modern_expired_no_bu_count
+        cl_modern_expired = 0
+        for cand in comp_projects:
+            c_pname = str(cand.get("promoter_name") or "")
+            c_name = str(cand.get("name") or "")
+            c_reg = str(cand.get("registration_number") or "")
+            full_text = f"{c_pname} {c_name} {c_reg}".upper()
+            if any(g in full_text for g in GOVT_AUTHORITY_KEYWORDS):
+                continue
+            c_date = str(cand.get("completion_date") or "").strip()
+            year_match = re.search(r"\b(20\d\d)\b", c_date)
+            if not year_match:
+                continue
+            if int(year_match.group(1)) >= 2020:
+                is_exp = (c_date and c_date < ref_today) or (cand.get("project_status") in ("EXPIRED", "REVOKED"))
+                has_bu = bool(cand.get("has_bu_noc")) or bool(cand.get("bu_certificate_no"))
+                if is_exp and not has_bu:
+                    cl_modern_expired += 1
 
-            has_bu = bool(cand.get("has_bu_noc")) or bool(cand.get("bu_certificate_no"))
-            if is_expired and not has_bu:
-                modern_expired_no_bu_count += 1
+        # Cluster confidence scoring
+        if len(comp_projects) <= 1:
+            cl_confidence = "LOW" if homonym_warning else "MEDIUM"
+        elif cl_shared_lics or cl_shared_banks or (cand_by_id[comp_pids[0]].get("promoter_id") is not None and len(comp_projects) > 1):
+            cl_confidence = "HIGH"
+        elif homonym_warning:
+            cl_confidence = "LOW"
+        else:
+            cl_confidence = "MEDIUM"
+
+        cl_districts = sorted(list({str(p.get("district") or "Unknown") for p in comp_projects}))
+        
+        clusters.append({
+            "cluster_id": cluster_idx,
+            "districts": cl_districts,
+            "portfolio_count": len(comp_projects),
+            "linkage_confidence": cl_confidence,
+            "shared_anchors": {
+                "shared_licenses": sorted(list(cl_shared_lics)),
+                "shared_banks": sorted(list(cl_shared_banks)),
+            },
+            "modern_expired_no_bu_count": cl_modern_expired,
+            "projects": comp_projects,
+        })
+        cluster_idx += 1
+
+    # Sort clusters by portfolio_count DESC
+    clusters.sort(key=lambda c: (c["portfolio_count"], c["districts"]), reverse=True)
+
+    # Compute overall modern_expired_no_bu_count
+    total_modern_expired_no_bu_count = sum(c["modern_expired_no_bu_count"] for c in clusters)
+    
+    # Compute all shared anchors across verified clusters
+    all_shared_lics: Set[str] = set()
+    all_shared_banks: Set[str] = set()
+    for c in clusters:
+        all_shared_lics.update(c["shared_anchors"]["shared_licenses"])
+        all_shared_banks.update(c["shared_anchors"]["shared_banks"])
+
+    # Determine primary linkage confidence and project list
+    target_cluster: Optional[Dict[str, Any]] = None
+    if project_id:
+        for cl in clusters:
+            if any(p["project_id"] == project_id for p in cl["projects"]):
+                target_cluster = cl
+                break
+
+    if target_cluster is not None:
+        primary_confidence = target_cluster["linkage_confidence"]
+        primary_projects = target_cluster["projects"]
+        target_cluster_id = target_cluster["cluster_id"]
+    elif len(raw_candidates) <= 1:
+        primary_confidence = "LOW" if homonym_warning else "MEDIUM"
+        primary_projects = raw_candidates
+        target_cluster_id = 1 if clusters else None
+    elif len(clusters) > 1:
+        primary_confidence = "PARTITIONED_MULTI_CLUSTER"
+        primary_projects = raw_candidates
+        target_cluster_id = None
+    else:
+        primary_confidence = clusters[0]["linkage_confidence"]
+        primary_projects = clusters[0]["projects"]
+        target_cluster_id = clusters[0]["cluster_id"]
+
+    # Compact clusters representation for token safety (<= 6k tokens)
+    compact_clusters: List[Dict[str, Any]] = []
+    for cl in clusters:
+        compact_clusters.append({
+            "cluster_id": cl["cluster_id"],
+            "districts": cl["districts"],
+            "portfolio_count": cl["portfolio_count"],
+            "linkage_confidence": cl["linkage_confidence"],
+            "shared_anchors": cl["shared_anchors"],
+            "modern_expired_no_bu_count": cl["modern_expired_no_bu_count"],
+            "project_ids": [p["project_id"] for p in cl["projects"]],
+            "sample_projects": [p.get("name") for p in cl["projects"][:3]],
+        })
 
     # Apply PII redaction and token cap
-    redacted_candidates = [redact_record(c) for c in raw_candidates]
-    capped_candidates = _enforce_token_cap_list(redacted_candidates)
+    redacted_projects = [redact_record(c) for c in primary_projects]
+    capped_candidates = _enforce_token_cap_list(redacted_projects)
 
     return {
         "promoter_name": redact_value("name", pname_str),
         "project_id": project_id,
+        "target_cluster_id": target_cluster_id,
         "portfolio_count": len(raw_candidates),
+        "cluster_count": len(clusters),
+        "clusters": compact_clusters,
         "resolved_projects": list(capped_candidates),
-        "linkage_confidence": linkage_confidence,
+        "linkage_confidence": primary_confidence,
         "homonym_warning": homonym_warning,
         "warning_message": warning_msg,
-        "modern_expired_no_bu_count": modern_expired_no_bu_count,
+        "modern_expired_no_bu_count": total_modern_expired_no_bu_count,
         "shared_anchors": {
             "shared_licenses": sorted(list(all_shared_lics)),
             "shared_banks": sorted(list(all_shared_banks)),
@@ -444,6 +561,7 @@ class KnowledgeGraph:
         """Find other projects sharing an architect, engineer, CA, or bank with this project.
 
         Filters out legacy promoter:None edges and enforces <= 4,000 token cap.
+        Uses a two-step indexed lookup to avoid unindexed string-concatenation joins on projects.
         """
         src_proj = f"project:{project_id}"
         query = """
@@ -451,13 +569,10 @@ class KnowledgeGraph:
                 e1.relation AS connection_type,
                 n.label AS shared_entity_name,
                 n.kind AS entity_kind,
-                e2.src_id AS linked_project_node,
-                p.name AS linked_project_name,
-                p.project_id AS linked_project_id
+                e2.src_id AS linked_project_node
             FROM graph_edges e1
             JOIN graph_nodes n ON n.node_id = e1.dst_id
             JOIN graph_edges e2 ON e2.dst_id = e1.dst_id AND e2.src_id != e1.src_id
-            JOIN projects p ON ('project:' || p.project_id) = e2.src_id
             WHERE e1.src_id = ?
               AND e1.dst_id NOT LIKE 'promoter:None%'
               AND e1.dst_id != 'promoter:'
@@ -469,17 +584,47 @@ class KnowledgeGraph:
               AND n.node_id != 'promoter:'
               AND e1.src_id NOT LIKE 'promoter:None%'
               AND e2.src_id NOT LIKE 'promoter:None%'
+              AND e2.src_id LIKE 'project:%'
         """
         cur = self.con.execute(query, (src_proj,))
+        raw_rows = cur.fetchall()
+
+        # Step 2: resolve project names via primary key index
+        pid_set: Set[int] = set()
+        parsed_rows: List[Tuple[Any, Any, Any, int]] = []
+        for r in raw_rows:
+            node_str = str(r["linked_project_node"])
+            if node_str.startswith("project:"):
+                raw_id = node_str.split(":", 1)[1]
+                if raw_id.isdigit():
+                    pid_int = int(raw_id)
+                    pid_set.add(pid_int)
+                    parsed_rows.append((r["connection_type"], r["shared_entity_name"], r["entity_kind"], pid_int))
+
+        name_map: Dict[int, str] = {}
+        if pid_set:
+            pids_list = list(pid_set)
+            chunk_size = 500
+            for i in range(0, len(pids_list), chunk_size):
+                chunk = pids_list[i : i + chunk_size]
+                placeholders = ",".join("?" for _ in chunk)
+                cur_p = self.con.execute(
+                    f"SELECT project_id, name FROM projects WHERE project_id IN ({placeholders})",
+                    chunk,
+                )
+                for pr in cur_p.fetchall():
+                    name_map[pr["project_id"]] = pr["name"]
+
         results = []
-        for r in cur.fetchall():
-            results.append({
-                "connection_type": r["connection_type"],
-                "shared_entity_name": redact_value("name", r["shared_entity_name"]),
-                "entity_kind": r["entity_kind"],
-                "linked_project_id": r["linked_project_id"],
-                "linked_project_name": redact_value("name", r["linked_project_name"]),
-            })
+        for conn_type, entity_name, entity_kind, linked_pid in parsed_rows:
+            if linked_pid in name_map:
+                results.append({
+                    "connection_type": conn_type,
+                    "shared_entity_name": redact_value("name", entity_name),
+                    "entity_kind": entity_kind,
+                    "linked_project_id": linked_pid,
+                    "linked_project_name": redact_value("name", name_map[linked_pid]),
+                })
 
         return _enforce_token_cap_list(results)
 

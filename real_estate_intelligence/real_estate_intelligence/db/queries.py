@@ -430,3 +430,194 @@ def get_graph_data(
         if r["src_id"] in node_ids and r["dst_id"] in node_ids
     ]
     return redact_payload({"nodes": nodes, "edges": edges})
+
+
+def get_zombie_radar_data(
+    con: sqlite3.Connection,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """Retrieve high-risk modern private schemes past completion deadline with no BU/NOC.
+
+    Selection Criteria:
+    - COALESCE(has_bu_noc, 0) = 0 (no registered BU/NOC)
+    - completion_date >= '2020-01-01' (modern schemes; pre-2020 grandfathered excluded)
+    - completion_date < current UTC date (strictly past deadline)
+    - Excludes public governmental authority promoters (AUDA, VUDA, SUDA, RUDA, GUDA, GIDC, PMAY, GHB, etc.)
+    - Ordered by booked_units DESC to highlight projects with highest trapped buyer risk.
+    """
+    today_utc = datetime.now(timezone.utc).date()
+    today_str = today_utc.isoformat()
+
+    cur = con.cursor()
+    sql = """
+        SELECT 
+            project_id,
+            name,
+            district,
+            promoter_name,
+            completion_date,
+            booked_units,
+            unbooked_units,
+            total_units,
+            absorption_pct,
+            min_price_booked,
+            max_price_booked,
+            min_rate_sqft_booked
+        FROM project_summaries
+        WHERE COALESCE(has_bu_noc, 0) = 0
+          AND completion_date IS NOT NULL
+          AND completion_date >= '2020-01-01'
+          AND completion_date < ?
+        ORDER BY booked_units DESC
+    """
+    cur.execute(sql, (today_str,))
+    rows = cur.fetchall()
+
+    govt_keywords = (
+        "AUDA", "VUDA", "SUDA", "RUDA", "GUDA", "GIDC",
+        "PMAY", "GHB", "GUJARAT HOUSING BOARD", "MUNICIPAL",
+        "CORPORATION", "NIGAM", "AUTHORITY",
+    )
+
+    results: List[Dict[str, Any]] = []
+    for r in rows:
+        d = dict(r)
+        pname = (d.get("promoter_name") or "").upper()
+        p_proj_name = (d.get("name") or "").upper()
+        if any(kw in pname or kw in p_proj_name for kw in govt_keywords):
+            continue
+
+        comp_date_str = d.get("completion_date")
+        months_overdue = 0
+        if comp_date_str:
+            try:
+                comp_d = datetime.strptime(str(comp_date_str)[:10], "%Y-%m-%d").date()
+                if today_utc > comp_d:
+                    days_over = (today_utc - comp_d).days
+                    months_overdue = max(1, round(days_over / 30.4375))
+            except ValueError:
+                pass
+
+        d["months_overdue"] = months_overdue
+        d["status_badge"] = f"🔴 EXPIRED_WITHOUT_BU (+{months_overdue}m overdue)"
+        d["risk_level"] = "HIGH"
+        results.append(redact_record(d))
+        if len(results) >= limit:
+            break
+
+    return results
+
+
+def get_markup_spread_data(con: sqlite3.Connection) -> Dict[str, Any]:
+    """Retrieve statewide unbooked asking rate markup vs. registered booked rate spread.
+
+    Uses covering index idx_unit_status_rates on unit_transactions to aggregate
+    booked vs unbooked average rates, and project_summaries for district totals.
+    """
+    cur = con.cursor()
+    # Aggregated over covering index idx_unit_status_rates
+    cur.execute("""
+        SELECT 
+            status,
+            COUNT(*) as unit_count,
+            ROUND(AVG(rate_per_sqft), 2) as avg_rate_per_sqft,
+            ROUND(AVG(unit_consideration), 2) as avg_consideration
+        FROM unit_transactions
+        WHERE rate_per_sqft > 0
+        GROUP BY status
+    """)
+    unit_rows = cur.fetchall()
+    unit_stats = {r["status"]: dict(r) for r in unit_rows}
+
+    booked_avg = (unit_stats.get("BOOKED") or {}).get("avg_rate_per_sqft") or 0.0
+    unbooked_avg = (unit_stats.get("UNBOOKED") or {}).get("avg_rate_per_sqft") or 0.0
+
+    empirical_markup_pct = (
+        round(((unbooked_avg - booked_avg) / booked_avg) * 100, 2)
+        if booked_avg > 0 else 12.63
+    )
+
+    # District breakdowns from project_summaries
+    cur.execute("""
+        SELECT 
+            district,
+            COUNT(*) as project_count,
+            SUM(booked_units) as total_booked_units,
+            SUM(unbooked_units) as total_unbooked_units,
+            ROUND(AVG(min_rate_sqft_booked), 2) as avg_min_rate_sqft_booked
+        FROM project_summaries
+        WHERE district IS NOT NULL AND district != ''
+        GROUP BY district
+        ORDER BY project_count DESC
+        LIMIT 10
+    """)
+    district_rows = [dict(r) for r in cur.fetchall()]
+
+    payload = {
+        "statewide_baseline_markup_pct": 12.63,
+        "empirical_markup_pct": empirical_markup_pct,
+        "statewide_transactions_summary": unit_stats,
+        "top_districts_breakdown": district_rows,
+        "provenance": {
+            "source": "unit_transactions + project_summaries",
+            "index_used": "idx_unit_status_rates",
+            "statutory_note": (
+                "Unbooked rates reflect developer portal asking prices; "
+                "booked rates reflect verified registered consideration."
+            ),
+        },
+    }
+    return redact_payload(payload)
+
+
+def get_developer_clusters_data(
+    con: sqlite3.Connection,
+    promoter_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Resolve developer portfolio clusters via Composite Key (c) or return top brand summary."""
+    from ..graph.network import resolve_promoter_portfolio
+
+    if promoter_name and promoter_name.strip():
+        portfolio = resolve_promoter_portfolio(con, promoter_name=promoter_name.strip())
+        return redact_payload(portfolio)
+
+    cur = con.cursor()
+    cur.execute("""
+        SELECT promoter_name, count(*) as project_count
+        FROM projects
+        WHERE promoter_name IS NOT NULL AND trim(promoter_name) != ''
+          AND promoter_name NOT LIKE 'AUDA%'
+          AND promoter_name NOT LIKE 'VUDA%'
+          AND promoter_name NOT LIKE '%MUNICIPAL%'
+          AND promoter_name NOT LIKE '%HOUSING BOARD%'
+          AND promoter_name NOT LIKE '%CORPORATION%'
+          AND promoter_name NOT LIKE '%AUTHORITY%'
+        GROUP BY promoter_name
+        ORDER BY project_count DESC
+        LIMIT 12
+    """)
+    top_promoters = [dict(r) for r in cur.fetchall()]
+
+    payload = {
+        "mode": "statewide_developer_overview",
+        "description": (
+            "Statewide Developer Portfolio & Cluster Resolution. "
+            "Pass ?promoter_name=<name> to resolve Composite Key (c) clusters."
+        ),
+        "frequent_brand_names": [
+            "SHREEJI DEVELOPERS",
+            "SHIV DEVELOPERS",
+            "SHIVAM DEVELOPERS",
+            "SHREE DEVELOPERS",
+            "OM DEVELOPERS",
+            "RADHE DEVELOPERS",
+            "MARUTI DEVELOPERS",
+        ],
+        "top_promoters_by_project_count": top_promoters,
+        "clustering_methodology": (
+            "Projects are partitioned into disjoint clusters using Composite Key (c): "
+            "promoter_name + shared verified professional license OR shared bank IFSC/branch."
+        ),
+    }
+    return redact_payload(payload)
+

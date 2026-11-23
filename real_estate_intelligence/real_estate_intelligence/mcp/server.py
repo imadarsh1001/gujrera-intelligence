@@ -279,13 +279,18 @@ class RealEstateIntelligenceMCP:
         """
         return self.spatial_pricer.benchmark(project_id, asset_class=asset_class, year=year)
 
-    def get_pricing_appreciation_trend(self, project_id: int) -> Dict[str, Any]:
+    def get_pricing_appreciation_trend(
+        self,
+        project_id: int,
+        asset_class: Optional[str] = "Residential",
+    ) -> Dict[str, Any]:
         """Calculate historical quarterly registered transaction rate velocity, longitudinal appreciation, and CAGR.
 
         Args:
             project_id: The GujRERA project registration ID.
+            asset_class: Optional asset class filter (default 'Residential', or 'Commercial', 'All').
         """
-        return self.pricing.get_longitudinal_pricing_trend(project_id)
+        return self.pricing.get_longitudinal_pricing_trend(project_id, asset_class=asset_class)
 
     def verify_sales_claim(
         self,
@@ -293,6 +298,7 @@ class RealEstateIntelligenceMCP:
         claimed_rate: Optional[float] = None,
         claimed_sold_pct: Optional[float] = None,
         claimed_completion_date: Optional[str] = None,
+        asset_class: Optional[str] = "Residential",
     ) -> Dict[str, Any]:
         """Verify broker or developer marketing sales claims against official sworn RERA deed disclosures.
 
@@ -301,12 +307,14 @@ class RealEstateIntelligenceMCP:
             claimed_rate: Claimed price per square foot (INR/sq.ft.).
             claimed_sold_pct: Claimed percentage of inventory sold (0.0 to 100.0).
             claimed_completion_date: Claimed completion date (YYYY-MM-DD).
+            asset_class: Optional asset class filter (default 'Residential', or 'Commercial', 'All').
         """
         return self.claims_verifier.verify_claim(
             project_id=project_id,
             claimed_rate_sqft=claimed_rate,
             claimed_sold_pct=claimed_sold_pct,
             claimed_completion_date=claimed_completion_date,
+            asset_class=asset_class,
         )
 
     def get_spatial_density(

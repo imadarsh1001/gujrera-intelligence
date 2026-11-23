@@ -1,7 +1,7 @@
 # real_estate_intelligence — Subtree Blueprint
 
 ## Overview
-`real_estate_intelligence` is an installable Python package (setuptools, `requires-python >= 3.11`, runtime dependency `pypdf>=5.0.0`, dev dependency `pytest>=8.0.0`) implementing an evidence-backed due-diligence platform for GujRERA (the Gujarat Real Estate Regulatory Authority; see [GLOSSARY.md](../GLOSSARY.md)): raw collection runs are ingested into a curated WAL-mode SQLite database with an FTS5 document index and a relational knowledge graph, and eight subsystems (`models`, `db`, `documents`, `analytics`, `graph`, `mcp`, `agent`, `ui`) expose analytics, an MCP tool server, an agentic LLM copilot, and a local web dashboard on top of it. The console script `real-estate-intelligence` maps to `real_estate_intelligence.cli:main` [pyproject.toml].
+`real_estate_intelligence` is an installable Python package (setuptools, `requires-python >= 3.11`, runtime dependency `pypdf>=5.0.0`, dev dependency `pytest>=8.0.0`) implementing an evidence-backed due-diligence platform for GujRERA (the Gujarat Real Estate Regulatory Authority; see [GLOSSARY.md](../GLOSSARY.md)): raw collection runs are ingested into a curated WAL-mode SQLite database with an FTS5 document index and a relational knowledge graph, and eight subsystems (`models`, `db`, `documents`, `analytics`, `graph`, `mcp`, `agent`, `ui`) expose analytics, a standards-compliant FastMCP 4.2.4 gateway with domain skills, an agentic LLM copilot, and a local web dashboard with Statewide Insights Radar on top of it. The console script `real-estate-intelligence` maps to `real_estate_intelligence.cli:main` [pyproject.toml].
 
 Data flow: `gujrera_pipeline` raw runs (sibling package outside this subtree, resolved by [real_estate_intelligence/config.py:DEFAULT_SOURCE_RUN]) -> `db.loader.ingest_from_run` -> `data/intelligence.sqlite` (tables + `document_fts` + `graph_nodes`/`graph_edges`) -> `analytics`, `graph`, `documents`, `mcp`, `agent`, and `ui` subsystems (read-side except `documents.worker`, which mutates job rows; see Global Invariants) -> `cli.py` subcommands and `ui/server.py` HTTP routes.
 
@@ -27,5 +27,5 @@ Data flow: `gujrera_pipeline` raw runs (sibling package outside this subtree, re
 - Read-side input: `DiskRunReader` opens `manifest.sqlite` read-only and decompresses `.json.gz` raw filings from the `gujrera_pipeline` run directory [real_estate_intelligence/db/EGM.md]
 
 ## System Verification
-- Run: `python -m pytest real_estate_intelligence/tests`
+- Run: `python -m pytest real_estate_intelligence/tests` (103 passing tests)
 - The `eval` CLI subcommand imports `tests.eval_harness.EvaluationHarness` directly [cli.py:cmd_eval]

@@ -102,6 +102,7 @@ GEMINI_TOOLS = [
             "type": "OBJECT",
             "properties": {
                 "project_id": {"type": "INTEGER", "description": "The GujRERA project registration ID."},
+                "asset_class": {"type": "STRING", "description": "Optional asset class filter (default 'Residential', or 'Commercial', 'All')."},
             },
             "required": ["project_id"],
         },
@@ -116,6 +117,7 @@ GEMINI_TOOLS = [
                 "claimed_rate": {"type": "NUMBER", "description": "Claimed price per square foot (INR/sq.ft.)."},
                 "claimed_sold_pct": {"type": "NUMBER", "description": "Claimed percentage of inventory sold (0.0 to 100.0)."},
                 "claimed_completion_date": {"type": "STRING", "description": "Claimed completion date (YYYY-MM-DD)."},
+                "asset_class": {"type": "STRING", "description": "Optional asset class filter (default 'Residential', or 'Commercial', 'All')."},
             },
             "required": ["project_id"],
         },

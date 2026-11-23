@@ -38,6 +38,9 @@ SENSITIVE_KEY_NAMES: Set[str] = {
     "snippet",
     "detail",
     "remarks",
+    "shared_anchors",
+    "shared_licenses",
+    "shared_banks",
 }
 
 ACCOUNT_KEY_NAMES: Set[str] = {
