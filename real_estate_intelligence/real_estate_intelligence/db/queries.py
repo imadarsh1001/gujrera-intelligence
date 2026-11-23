@@ -5,10 +5,16 @@ Single source of truth for SQL operations across API servers and CLI tools.
 
 from datetime import datetime, timezone
 import json
+import re
 import sqlite3
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .redaction import redact_payload, redact_record, redact_value
+
+GOVT_AUTHORITY_REGEX = re.compile(
+    r"\b(VUDA|AUDA|SUDA|RUDA|GUDA|GIDC|PMAY|GHB|GUJARAT HOUSING BOARD|URBAN DEVELOPMENT AUTHORITY|MUNICIPAL|CORPORATION|NIGAM)\b",
+    re.IGNORECASE,
+)
 
 
 def parse_timestamp(raw: Any) -> Optional[datetime]:
@@ -45,23 +51,176 @@ def get_projects_list(con: sqlite3.Connection) -> List[Dict[str, Any]]:
 
 
 SORT_COLUMN_MAP: Dict[str, str] = {
-    "name": "name",
-    "district": "district",
-    "completion_date": "completion_date",
-    "progress_pct": "progress_pct",
-    "min_price_booked": "min_price_booked",
-    "price": "min_price_booked",
-    "min_rate_sqft_booked": "min_rate_sqft_booked",
-    "rate": "min_rate_sqft_booked",
-    # Note: 'days_since_latest_filing' is dropped as an active sort column since filing dates
-    # are not tracked in pre-aggregated project_summaries.
-    "revision_state": "revision_state",
     "project_id": "project_id",
+    "name": "name",
+    "registration_number": "registration_number",
+    "reg_no": "registration_number",
+    "promoter_name": "promoter_name",
+    "promoter": "promoter_name",
+    "district": "district",
+    "taluka": "taluka",
+    "project_type": "project_type",
+    "type": "project_type",
+    "project_status": "project_status",
+    "status": "project_status",
+    "tier": "tier",
+    "completion_date": "completion_date",
     "total_units": "total_units",
     "booked_units": "booked_units",
+    "unbooked_units": "unbooked_units",
     "absorption_pct": "absorption_pct",
     "absorption": "absorption_pct",
+    "min_price_booked": "min_price_booked",
+    "price": "min_price_booked",
+    "max_price_booked": "max_price_booked",
+    "min_rate_sqft_booked": "min_rate_sqft_booked",
+    "rate": "min_rate_sqft_booked",
+    "avg_rate_sqft_booked": "avg_rate_sqft_booked",
 }
+
+
+DEEP_AUDIT_IDS = {13560, 13705, 16104, 16562, 17255, 17830, 17855, 20523, 24508}
+
+
+def normalize_data_tier(db_tier: Optional[str], project_id: Optional[int] = None) -> str:
+    """Normalize raw DB tier into canonical 'pilot_deep' or 'statewide_core' (matching mcp/envelope.py)."""
+    if project_id is not None and project_id in DEEP_AUDIT_IDS:
+        return "pilot_deep"
+    t = str(db_tier or "").strip().lower()
+    if "deep" in t:
+        return "pilot_deep"
+    return "statewide_core"
+
+
+def get_project_truth_flags(con: sqlite3.Connection, pid: int) -> Dict[str, Any]:
+    """Single canonical source of truth for project compliance, BU status, and risk flags."""
+    srow = con.execute(
+        "SELECT has_bu_noc, bu_certificate_no, tier, completion_date, promoter_name, name, registration_number "
+        "FROM project_summaries WHERE project_id = ?",
+        (pid,),
+    ).fetchone()
+    prow = con.execute(
+        "SELECT completion_date, promoter_name, name, registration_number, tier "
+        "FROM projects WHERE project_id = ?",
+        (pid,),
+    ).fetchone()
+
+    name = (srow["name"] if srow and srow["name"] else (prow["name"] if prow else "")) or ""
+    promoter_name = (srow["promoter_name"] if srow and srow["promoter_name"] else (prow["promoter_name"] if prow else "")) or ""
+    reg_no = (srow["registration_number"] if srow and srow["registration_number"] else (prow["registration_number"] if prow else "")) or ""
+    comp_date_str = (srow["completion_date"] if srow and srow["completion_date"] else (prow["completion_date"] if prow else "")) or ""
+    raw_tier = (srow["tier"] if srow and srow["tier"] else (prow["tier"] if prow else "")) or ""
+
+    bu_rows = con.execute(
+        "SELECT id, block_name, bu_check, bu_date, fire_doc_id, lift_doc_id "
+        "FROM noc_bu_records WHERE project_id = ?",
+        (pid,),
+    ).fetchall()
+
+    has_summary_bu = bool(srow["has_bu_noc"]) if srow and srow["has_bu_noc"] is not None else False
+    summary_bu_cert = str(srow["bu_certificate_no"]).strip() if srow and srow["bu_certificate_no"] else None
+    verified_bu_blocks = [r for r in bu_rows if str(r["bu_check"] or "").strip().upper() == "YES" or r["bu_date"]]
+    has_bu_noc = has_summary_bu or len(verified_bu_blocks) > 0
+
+    if summary_bu_cert:
+        bu_certificate_no = summary_bu_cert
+    elif verified_bu_blocks and verified_bu_blocks[0]["bu_date"]:
+        bu_certificate_no = verified_bu_blocks[0]["bu_date"]
+    elif has_bu_noc:
+        bu_certificate_no = "BU-VERIFIED"
+    else:
+        bu_certificate_no = None
+
+    bu_dates = [str(r["bu_date"]).strip() for r in verified_bu_blocks if r["bu_date"]]
+    bu_date = max(bu_dates) if bu_dates else None
+
+    is_govt_authority = bool(
+        GOVT_AUTHORITY_REGEX.search(promoter_name) or GOVT_AUTHORITY_REGEX.search(name)
+    )
+
+    today_utc = datetime.now(timezone.utc).date()
+    is_legacy_grandfathered = False
+    months_overdue = 0
+    comp_date_clean = str(comp_date_str).strip()[:10]
+    if comp_date_clean:
+        try:
+            comp_d = datetime.strptime(comp_date_clean, "%Y-%m-%d").date()
+            if comp_d.year <= 2019:
+                is_legacy_grandfathered = True
+            if not has_bu_noc and today_utc > comp_d:
+                days_over = (today_utc - comp_d).days
+                months_overdue = max(1, round(days_over / 30.4375))
+        except Exception:
+            pass
+
+    if has_bu_noc:
+        cert_disp = bu_certificate_no or "Verified"
+        date_disp = f" (Date: {bu_date})" if bu_date else ""
+        status_badge = f"✅ BU GRANTED / VERIFIED (Certificate: {cert_disp}{date_disp})"
+    elif months_overdue > 0:
+        if is_govt_authority:
+            status_badge = f"ℹ️ EXPIRED WITHOUT BU (+{months_overdue}m overdue, Govt Authority Scheme)"
+        elif is_legacy_grandfathered:
+            status_badge = f"ℹ️ EXPIRED WITHOUT BU (+{months_overdue}m overdue, Legacy Pre-2020 Grandfathered)"
+        else:
+            status_badge = f"🔴 EXPIRED_WITHOUT_BU (+{months_overdue}m overdue)"
+    else:
+        sched_date = comp_date_clean or "Statutory Deadline"
+        status_badge = f"⏳ Pending / Under Construction (Scheduled completion: {sched_date})"
+
+    return {
+        "has_bu_noc": has_bu_noc,
+        "bu_certificate_no": bu_certificate_no,
+        "bu_date": bu_date,
+        "months_overdue": months_overdue,
+        "is_legacy_grandfathered": is_legacy_grandfathered,
+        "is_govt_authority": is_govt_authority,
+        "status_badge": status_badge,
+        "data_tier": normalize_data_tier(raw_tier, project_id=pid),
+    }
+
+
+def search_project_summaries(
+    con: sqlite3.Connection,
+    q: Optional[str],
+    district: Optional[str] = None,
+    limit: int = 15,
+) -> List[Dict[str, Any]]:
+    """Query project_summaries across name, promoter_name, registration_number, district, taluka.
+    
+    Escapes wildcard characters and matches district case-insensitively.
+    Scrubbed via redact_payload before returning.
+    """
+    clean_q = (q or "").strip()
+    if len(clean_q) < 2:
+        return []
+
+    clamped_limit = min(max(1, limit), 50)
+    escaped = clean_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{escaped}%"
+
+    sql = """
+        SELECT * FROM project_summaries
+        WHERE (
+            name LIKE ? ESCAPE '\\'
+            OR promoter_name LIKE ? ESCAPE '\\'
+            OR registration_number LIKE ? ESCAPE '\\'
+            OR district LIKE ? ESCAPE '\\'
+            OR taluka LIKE ? ESCAPE '\\'
+        )
+    """
+    params: List[Any] = [pattern, pattern, pattern, pattern, pattern]
+
+    if district and district.strip():
+        sql += " AND LOWER(district) = LOWER(?)"
+        params.append(district.strip())
+
+    sql += " ORDER BY project_id ASC LIMIT ?"
+    params.append(clamped_limit)
+
+    cur = con.execute(sql, params)
+    rows = [dict(r) for r in cur.fetchall()]
+    return redact_payload(rows)
 
 
 def sort_explore_rows(

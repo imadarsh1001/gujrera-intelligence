@@ -161,10 +161,16 @@ class LibsqlConnectionWrapper:
             self.commit()
 
 
-def get_connection(db_path: Optional[Union[Path, str, Any]] = None) -> Any:
+def get_connection(
+    db_path: Optional[Union[Path, str, Any]] = None,
+    read_only: bool = False,
+) -> Any:
     """Connection factory returning a local SQLite3 or remote Turso libSQL connection."""
     if hasattr(db_path, "cursor") and hasattr(db_path, "execute"):
         return db_path
+
+    env_ro = os.environ.get("GUJRERA_DB_READ_ONLY", "").strip().lower() in ("1", "true", "yes")
+    is_ro = read_only or env_ro
 
     turso_url = os.environ.get("TURSO_DATABASE_URL")
     turso_token = os.environ.get("TURSO_AUTH_TOKEN")
@@ -175,10 +181,19 @@ def get_connection(db_path: Optional[Union[Path, str, Any]] = None) -> Any:
         raw_con = libsql.connect(database=turso_url, auth_token=turso_token or "")
         raw_con.execute("SELECT 1")
         con = LibsqlConnectionWrapper(raw_con, is_remote=True)
-        init_schema(con)
+        if not is_ro:
+            init_schema(con)
         return con
 
     path = Path(db_path) if db_path else DEFAULT_DB_PATH
+    if is_ro and str(db_path) != ":memory:":
+        uri = f"file:{path.resolve().as_posix()}?mode=ro"
+        con = sqlite3.connect(uri, uri=True, timeout=30.0, check_same_thread=False)
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA foreign_keys = ON;")
+        con.execute("PRAGMA busy_timeout = 30000;")
+        return con
+
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path, timeout=30.0, check_same_thread=False)
     con.row_factory = sqlite3.Row

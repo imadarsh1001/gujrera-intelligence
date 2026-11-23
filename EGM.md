@@ -39,18 +39,18 @@ Root-level files:
 - **Dual-repo boundary**: the private pipeline and public platform are sovereign, decoupled git repositories; each is version-controlled and pushed independently using standard Git commands
 - **Single SQL seam**: all database queries, facet extractions, project dossier queries, and revision-state heuristics are centralized in `real_estate_intelligence/db/queries.py`
 - **FastAPI / ASGI runtime**: the application uses a single FastAPI application (`api/index.py`) launched via uvicorn; stdlib `ThreadingHTTPServer` is retired
-- **18 Active Routes**: `/`, `/static/{path}`, `/mcp`, `/api/health`, `/api/map/pins`, `/api/projects`, `/api/project/{pid}`, `/api/pricing/{pid}`, `/api/explore`, `/api/explore/facets`, `/api/graph`, `/api/insights/zombie_radar`, `/api/insights/markup_spread`, `/api/insights/developer_clusters`, `/api/analytics/survival`, `/api/analytics/pricing_trend`, `/api/analytics/ml_pricing`, `/api/verify_claim`, `/api/search`, `/api/map/config`, `/api/maptiler/{path}`, `/api/copilot`
+- **21 Active Routes**: `/`, `/static/{path}`, `/mcp`, `/api/health`, `/api/map/pins`, `/api/projects`, `/api/compare`, `/api/search/projects`, `/api/project/{pid}`, `/api/pricing/{pid}`, `/api/explore`, `/api/explore/facets`, `/api/graph`, `/api/insights/zombie_radar`, `/api/insights/markup_spread`, `/api/insights/developer_clusters`, `/api/analytics/survival`, `/api/analytics/pricing_trend`, `/api/analytics/spatial_pricing`, `/api/analytics/ml_pricing`, `/api/verify_claim`, `/api/search`, `/api/map/config`, `/api/maptiler/{path}`, `/api/copilot`
 - **Privacy redaction in code**: identity documents (`pancard`, `photograph`, `aadhar/aadhaar`, `kyc`, `passport`), booking/photos/promoter endpoints are excluded from public distribution; centralized in-memory scrubber (`db/redaction.py`) prevents leakage of PAN, Aadhaar, email, and bank account numbers
-- **Write-boundary discipline**: only ingestion and document workers mutate state; analytics, MCP, copilot, and FastAPI are read-only over the shared database connection
+- **Write-boundary discipline**: only ingestion and document workers mutate state; analytics, MCP, copilot, and FastAPI are strictly read-only (`mode=ro`, skipping WAL mode changes and schema DDL) over the shared database connection, preventing file mtime mutation and per-request migration overhead
 - **Escrow semantics encoded once**: `banks.account_type` `1` = 70% retention/escrow, `2` = 100% collection, interpreted identically across all layers
 
 ## Global Side Effects
 
 - **Network**: `https://gujrera.gujarat.gov.in` (pipeline collectors), Gemini/OpenAI APIs when an API key is provided (`agent/copilot.py` or copilot UI drawer), and optional MapTiler basemap proxy; all frontend assets (Tailwind, Font Awesome, vis-network, Chart.js, MapLibre GL) are vendored under `real_estate_intelligence/real_estate_intelligence/ui/static/vendor/` and served locally
-- **Disk**: `real_estate_intelligence/data/intelligence.sqlite` (+ WAL/SHM), `graph_nodes` / `graph_edges` tables in the curated DB
+- **Disk**: `real_estate_intelligence/data/intelligence.sqlite` (immutable at runtime in read-only URI mode), `real_estate_intelligence/data/markup_spread_snapshot.json` (sub-50ms cold-start cache)
 - **Sockets**: local dashboard binds `127.0.0.1:8765` (default)
 
 ## System Verification
 
-- Public platform tests: `python -m pytest real_estate_intelligence/tests` (103 passing tests)
+- Public platform tests: `python -m pytest real_estate_intelligence/tests` (110 passing tests)
 - Launch dashboard: `python run_server.py` (or `python -m real_estate_intelligence serve --port 8765`)

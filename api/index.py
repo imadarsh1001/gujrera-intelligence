@@ -49,10 +49,12 @@ if pkg_root.exists() and str(pkg_root) not in sys.path:
 from real_estate_intelligence.analytics.audit import ProjectAuditor
 from real_estate_intelligence.analytics.claims_checker import SalesClaimVerifier
 from real_estate_intelligence.analytics.pricing import PricingIntelligence
+from real_estate_intelligence.analytics.spatial_pricing import SpatialEmpiricalPricer
 from real_estate_intelligence.agent.copilot import AgenticCopilot, handle_copilot_query
 from real_estate_intelligence.config import DEFAULT_DB_PATH
 from real_estate_intelligence.db.database import get_connection
 from real_estate_intelligence.db.queries import (
+    SORT_COLUMN_MAP,
     get_developer_clusters_data,
     get_explore_facets,
     get_explore_rows,
@@ -60,10 +62,14 @@ from real_estate_intelligence.db.queries import (
     get_map_pins,
     get_markup_spread_data,
     get_project_detail,
+    get_project_truth_flags,
     get_projects_list,
     get_zombie_radar_data,
+    normalize_data_tier,
+    search_project_summaries,
     sort_explore_rows,
 )
+from real_estate_intelligence.db.redaction import redact_payload
 from real_estate_intelligence.documents.search import DocumentSearchEngine
 from real_estate_intelligence.graph.network import KnowledgeGraph
 from real_estate_intelligence.mcp.fastmcp_app import mcp
@@ -76,6 +82,7 @@ class AppState:
     pricing_engine: Any = None
     verifier: Any = None
     auditor: Any = None
+    spatial_pricer: Any = None
     search_engine: Any = None
     graph_engine: Any = None
     mcp_server: Any = None
@@ -85,12 +92,13 @@ class AppState:
     developer_clusters_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 
     @classmethod
-    def setup_backends(cls, db_path: Optional[Any] = None) -> None:
+    def setup_backends(cls, db_path: Optional[Any] = None, read_only: bool = True) -> None:
         cls.db_path = db_path
-        cls.con = get_connection(db_path)
+        cls.con = get_connection(db_path, read_only=read_only)
         cls.pricing_engine = PricingIntelligence(cls.con)
         cls.verifier = SalesClaimVerifier(cls.con)
         cls.auditor = ProjectAuditor(cls.con)
+        cls.spatial_pricer = SpatialEmpiricalPricer(cls.con)
         cls.search_engine = DocumentSearchEngine(cls.con)
         cls.graph_engine = KnowledgeGraph(cls.con)
         cls.mcp_server = RealEstateIntelligenceMCP(cls.con)
@@ -102,7 +110,7 @@ class AppState:
     @classmethod
     def get_backends(cls) -> "AppState":
         if cls.con is None:
-            cls.setup_backends()
+            cls.setup_backends(read_only=True)
         return cls
 
 
@@ -124,9 +132,9 @@ def _put_cached_developer_cluster(name: str, val: Dict[str, Any]) -> None:
     AppState.developer_clusters_cache[key] = val
 
 
-def setup_backends(db_path: Optional[Any] = None) -> None:
+def setup_backends(db_path: Optional[Any] = None, read_only: bool = False) -> None:
     """Public helper for test suites to inject custom database paths."""
-    AppState.setup_backends(db_path)
+    AppState.setup_backends(db_path, read_only=read_only)
 
 
 def sanitize_floats(obj: Any) -> Any:
@@ -297,6 +305,67 @@ def api_projects():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/compare")
+def api_compare(
+    ids: Optional[str] = Query(None, description="Comma-separated project IDs (e.g. ?ids=9036,17207)"),
+):
+    """Side-by-side project comparison endpoint with truth flags and PII redaction."""
+    if not ids or not ids.strip():
+        raise HTTPException(status_code=400, detail="Missing or empty 'ids' parameter")
+
+    raw_tokens = [tok.strip() for tok in ids.split(",") if tok.strip()]
+    if not raw_tokens:
+        raise HTTPException(status_code=400, detail="Empty project IDs provided")
+
+    parsed_ids: List[int] = []
+    for tok in raw_tokens:
+        try:
+            parsed_ids.append(int(tok))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail=f"Invalid project ID: {tok}")
+
+    if len(parsed_ids) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 project IDs allowed for comparison")
+
+    backends = AppState.get_backends()
+    raw_comparison = backends.mcp_server.compare_projects(parsed_ids)
+    comp_by_pid = {r["project_id"]: dict(r) for r in raw_comparison}
+
+    results: List[Dict[str, Any]] = []
+    for pid in parsed_ids:
+        if pid in comp_by_pid:
+            item = comp_by_pid[pid]
+            item["truth_flags"] = get_project_truth_flags(backends.con, pid)
+            results.append(item)
+        else:
+            results.append({"project_id": pid, "error": "not_found"})
+
+    redacted = redact_payload(results)
+    return JSONResponse(sanitize_floats(redacted))
+
+
+@app.get("/api/search/projects")
+def api_search_projects(
+    q: Optional[str] = Query(None, description="Search query across name, promoter, reg_no, district, taluka"),
+    district: Optional[str] = Query(None, description="Optional case-insensitive district filter"),
+    limit: Optional[int] = Query(15, description="Maximum results (1-50, default 15)"),
+):
+    """Fast search across project_summaries with wildcard escaping and case-insensitive district matching."""
+    stripped_q = (q or "").strip()
+    if len(stripped_q) < 2:
+        return JSONResponse([])
+
+    clamped_limit = min(max(1, limit or 15), 50)
+    backends = AppState.get_backends()
+    results = search_project_summaries(
+        backends.con,
+        q=stripped_q,
+        district=district,
+        limit=clamped_limit,
+    )
+    return JSONResponse(sanitize_floats(results))
+
+
 @app.get("/api/project/{pid}")
 def api_project_detail(pid: str):
     """Detailed statutory records for a specific project with graceful statewide fallbacks."""
@@ -314,6 +383,7 @@ def api_project_detail(pid: str):
     )
     if detail is None:
         raise HTTPException(status_code=404, detail="Project not found")
+    detail["truth_flags"] = get_project_truth_flags(backends.con, num_pid)
     return JSONResponse(sanitize_floats(detail))
 
 
@@ -388,7 +458,14 @@ def api_explore(
         filtered = [r for r in filtered if (r.get("extensions_count") or 0) > 0]
 
     if sort_by:
-        filtered = sort_explore_rows(filtered, sort_by=sort_by, sort_dir=sort_dir)
+        sort_key_clean = str(sort_by).strip().lower()
+        if sort_key_clean not in SORT_COLUMN_MAP:
+            allowed = sorted(list(SORT_COLUMN_MAP.keys()))
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid sort_by '{sort_by}'. Allowed keys: {', '.join(allowed)}",
+            )
+        filtered = sort_explore_rows(filtered, sort_by=sort_key_clean, sort_dir=sort_dir)
 
     if limit is not None:
         try:
@@ -452,16 +529,40 @@ def api_insights_zombie_radar(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+_MARKUP_SPREAD_SNAPSHOTS = [
+    Path(__file__).resolve().parent.parent / "real_estate_intelligence" / "data" / "markup_spread_snapshot.json",
+    Path(__file__).resolve().parent.parent / "data" / "markup_spread_snapshot.json",
+]
+
+
 @app.get("/api/insights/markup_spread")
 def api_insights_markup_spread():
     """Statewide unbooked asking rate markup vs. registered booked rate spread."""
-    backends = AppState.get_backends()
     if AppState.markup_spread_cache is not None:
         return JSONResponse(AppState.markup_spread_cache)
+
+    backends = AppState.get_backends()
+    is_default_db = (
+        backends.db_path is None
+        or str(backends.db_path) == str(DEFAULT_DB_PATH)
+        or Path(backends.db_path).resolve() == Path(DEFAULT_DB_PATH).resolve()
+    )
+
+    if is_default_db:
+        for snap_path in _MARKUP_SPREAD_SNAPSHOTS:
+            if snap_path.is_file():
+                try:
+                    with open(snap_path, "r", encoding="utf-8") as f:
+                        snap_data = json.load(f)
+                    AppState.markup_spread_cache = sanitize_floats(snap_data)
+                    return JSONResponse(AppState.markup_spread_cache)
+                except Exception as ex:
+                    logger.warning("Failed to load markup spread snapshot from %s: %s", snap_path, ex)
+
     try:
         data = get_markup_spread_data(backends.con)
-        AppState.markup_spread_cache = data
-        return JSONResponse(sanitize_floats(data))
+        AppState.markup_spread_cache = sanitize_floats(data)
+        return JSONResponse(AppState.markup_spread_cache)
     except Exception as e:
         logger.exception("Error in /api/insights/markup_spread: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -553,12 +654,31 @@ def api_analytics_ml_pricing(
     return JSONResponse(sanitize_floats(res))
 
 
+@app.get("/api/analytics/spatial_pricing")
+def api_spatial_pricing(
+    project_id: Optional[str] = Query(None, description="Project ID"),
+    asset_class: Optional[str] = Query("Residential", description="Asset class (e.g. Residential, Commercial)"),
+):
+    """Empirical spatial pricing benchmark and comp distribution."""
+    if not project_id:
+        raise HTTPException(status_code=400, detail="Missing required 'project_id' query parameter")
+    try:
+        pid = int(project_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid project ID")
+
+    backends = AppState.get_backends()
+    res = backends.spatial_pricer.benchmark(pid, asset_class=asset_class or "Residential")
+    return JSONResponse(sanitize_floats(res))
+
+
 @app.get("/api/verify_claim")
 def api_verify_claim(
     project_id: Optional[str] = Query(None),
     claimed_rate: Optional[str] = Query(None),
     claimed_sold: Optional[str] = Query(None),
     claimed_date: Optional[str] = Query(None),
+    asset_class: Optional[str] = Query("Residential"),
 ):
     """Statutory sales claim verifier cross-checking Form 3 certified deeds."""
     try:
@@ -575,6 +695,7 @@ def api_verify_claim(
         claimed_rate_sqft=price,
         claimed_sold_pct=sold,
         claimed_completion_date=date,
+        asset_class=asset_class or "Residential",
     )
     return JSONResponse(sanitize_floats(res))
 

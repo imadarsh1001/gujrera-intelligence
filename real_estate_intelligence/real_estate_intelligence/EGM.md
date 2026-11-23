@@ -50,5 +50,5 @@ Application core of the GujRERA Real Estate Intelligence platform. `cli.py` defi
 - `dossier --output` writes a Markdown file to an arbitrary caller-specified path [cli.py:cmd_dossier]
 
 ## Verification
-- Run: `python -m pytest real_estate_intelligence/tests` (103 passing tests)
+- Run: `python -m pytest real_estate_intelligence/tests` (110 passing tests)
 - Console script declared in `pyproject.toml`: `real-estate-intelligence = "real_estate_intelligence.cli:main"`

@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -107,6 +108,31 @@ class TestFastAPIEndpoints(unittest.TestCase):
                 json.dumps(["2 BHK", "3 BHK"]), json.dumps({"2 BHK": 60, "3 BHK": 46}),
                 0, None, "Test Architect", None, None, "State Bank of India",
                 23.0225, 72.5714, 1
+            ))
+
+        # Also seed project 9036 (SHALIGRAM PRIME, statewide core with BU) if not present
+        if not any(r[0] == 9036 for r in records):
+            con.execute("""
+                INSERT OR IGNORE INTO projects (
+                    project_id, name, registration_number, promoter_id, promoter_name, district, taluka,
+                    project_type, project_status, tier, completion_date, latitude, longitude
+                ) VALUES (9036, 'SHALIGRAM PRIME', 'PR/GJ/AHMEDABAD/AHMEDABAD CITY/AUDA/MAA06127/A2M/281021',
+                    9999, 'SHALIGRAM PROPERTIES LLP', 'Ahmedabad', 'Daskroi', 'Residential', 'REGISTERED', 'statewide',
+                    '2024-12-31', 23.0100, 72.5000)
+            """)
+            con.execute("""
+                INSERT OR IGNORE INTO noc_bu_records (
+                    project_id, block_name, bu_check, bu_date, fire_doc_id, lift_doc_id
+                ) VALUES (9036, 'R', 'YES', '2024-07-12', '4095610', '4095611')
+            """)
+            con.commit()
+            records.append((
+                9036, "SHALIGRAM PRIME", "PR/GJ/AHMEDABAD/AHMEDABAD CITY/AUDA/MAA06127/A2M/281021",
+                "SHALIGRAM PROPERTIES LLP", "Ahmedabad", "Daskroi", "Residential", "REGISTERED", "statewide",
+                "2024-12-31", 500, 480, 20, 96.0, 7500000.0, 15000000.0, 6500.0, 7200.0,
+                json.dumps(["3 BHK", "4 BHK"]), json.dumps({"3 BHK": 300, "4 BHK": 180}),
+                1, "4095612", "Test Architect", None, None, "HDFC Bank",
+                23.0100, 72.5000, 1
             ))
 
         con.executemany("""
@@ -537,10 +563,168 @@ class TestFastAPIEndpoints(unittest.TestCase):
 
     def test_api_explore_sorting_sql_injection_guarded(self):
         res = self.client.get("/api/explore?limit=5&sort_by=non_existent_column;DROP+TABLE;--&sort_dir=desc")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Invalid sort_by", res.json()["detail"])
+        self.assertIn("Allowed keys:", res.json()["detail"])
+
+    def test_api_explore_sorting_invalid_key_400(self):
+        res = self.client.get("/api/explore?limit=5&sort_by=totally_fake_column")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Allowed keys:", res.json()["detail"])
+
+    def test_api_compare_endpoints(self):
+        # 1. Successful compare with existing projects
+        res = self.client.get("/api/compare?ids=10760,9036")
+        self.assertEqual(res.status_code, 200)
+        items = res.json()
+        self.assertIsInstance(items, list)
+        self.assertEqual(len(items), 2)
+        pids = [it["project_id"] for it in items]
+        self.assertIn(10760, pids)
+        self.assertIn(9036, pids)
+        for it in items:
+            self.assertIn("truth_flags", it)
+            self.assertIn("has_bu_noc", it["truth_flags"])
+            self.assertIn("data_tier", it["truth_flags"])
+
+        # 2. Compare including a missing ID returns {"project_id": pid, "error": "not_found"}
+        res_missing = self.client.get("/api/compare?ids=10760,99999999")
+        self.assertEqual(res_missing.status_code, 200)
+        items_m = res_missing.json()
+        self.assertEqual(len(items_m), 2)
+        missing_item = next(it for it in items_m if it["project_id"] == 99999999)
+        self.assertEqual(missing_item.get("error"), "not_found")
+
+        # 3. Validation errors
+        res_empty = self.client.get("/api/compare?ids=")
+        self.assertEqual(res_empty.status_code, 400)
+
+        res_none = self.client.get("/api/compare")
+        self.assertEqual(res_none.status_code, 400)
+
+        res_invalid = self.client.get("/api/compare?ids=10760,invalid_id")
+        self.assertEqual(res_invalid.status_code, 400)
+
+        res_too_many = self.client.get("/api/compare?ids=" + ",".join(str(i) for i in range(1, 13)))
+        self.assertEqual(res_too_many.status_code, 400)
+
+    def test_api_search_projects(self):
+        # 1. Short query < 2 chars returns [] immediately
+        res_short = self.client.get("/api/search/projects?q=a")
+        self.assertEqual(res_short.status_code, 200)
+        self.assertEqual(res_short.json(), [])
+
+        res_blank = self.client.get("/api/search/projects?q=   ")
+        self.assertEqual(res_blank.status_code, 200)
+        self.assertEqual(res_blank.json(), [])
+
+        # 2. Normal query matches name/promoter
+        res = self.client.get("/api/search/projects?q=AADHVAN")
         self.assertEqual(res.status_code, 200)
         data = res.json()
-        self.assertIn("items", data)
-        self.assertLessEqual(len(data["items"]), 5)
+        self.assertIsInstance(data, list)
+        self.assertGreaterEqual(len(data), 1)
+        self.assertEqual(data[0]["project_id"], 10760)
+
+        # 3. Case-insensitive district filter
+        res_dist_upper = self.client.get("/api/search/projects?q=AADHVAN&district=AHMEDABAD")
+        self.assertEqual(res_dist_upper.status_code, 200)
+        self.assertGreaterEqual(len(res_dist_upper.json()), 1)
+
+        res_dist_lower = self.client.get("/api/search/projects?q=AADHVAN&district=ahmedabad")
+        self.assertEqual(res_dist_lower.status_code, 200)
+        self.assertEqual(len(res_dist_upper.json()), len(res_dist_lower.json()))
+
+        res_dist_mismatch = self.client.get("/api/search/projects?q=AADHVAN&district=Surat")
+        self.assertEqual(res_dist_mismatch.status_code, 200)
+        self.assertEqual(res_dist_mismatch.json(), [])
+
+        # 4. Wildcard escaping guard: % and _ do not trigger SQL crashes
+        res_wildcard = self.client.get("/api/search/projects?q=100%_special\\")
+        self.assertEqual(res_wildcard.status_code, 200)
+        self.assertIsInstance(res_wildcard.json(), list)
+
+    def test_api_analytics_spatial_pricing(self):
+        # 1. Valid spatial pricing query
+        res = self.client.get("/api/analytics/spatial_pricing?project_id=10760&asset_class=Residential")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("sample_size", data)
+        self.assertIn("statewide_markup_baseline_pct", data)
+        self.assertEqual(data["statewide_markup_baseline_pct"], 12.63)
+
+        # 2. Missing project_id parameter
+        res_missing = self.client.get("/api/analytics/spatial_pricing")
+        self.assertEqual(res_missing.status_code, 400)
+
+        # 3. Invalid project_id parameter
+        res_invalid = self.client.get("/api/analytics/spatial_pricing?project_id=non_numeric")
+        self.assertEqual(res_invalid.status_code, 400)
+
+    def test_api_verify_claim_with_asset_class(self):
+        expected = AppState.verifier.verify_claim(
+            16562, claimed_rate_sqft=4200.0, asset_class="Residential"
+        )
+        expected_verdict = expected["verification_checks"][0]["verdict"]
+
+        res = self.client.get("/api/verify_claim?project_id=16562&claimed_rate=4200&asset_class=Residential")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("verification_checks", data)
+        self.assertGreaterEqual(len(data["verification_checks"]), 1)
+        self.assertEqual(data["verification_checks"][0]["verdict"], expected_verdict)
+
+    def test_truth_flags_statewide_and_pilot_deep(self):
+        # 1. Statewide Core project 9036
+        res_9036 = self.client.get("/api/project/9036")
+        self.assertEqual(res_9036.status_code, 200)
+        d_9036 = res_9036.json()
+        self.assertIn("truth_flags", d_9036)
+        tf_9036 = d_9036["truth_flags"]
+        self.assertEqual(tf_9036["data_tier"], "statewide_core")
+        self.assertTrue(tf_9036["has_bu_noc"])
+        self.assertEqual(tf_9036["bu_certificate_no"], "4095612")
+        self.assertEqual(tf_9036["bu_date"], "2024-07-12")
+        self.assertEqual(tf_9036["months_overdue"], 0)
+        self.assertFalse(tf_9036["is_legacy_grandfathered"])
+        self.assertFalse(tf_9036["is_govt_authority"])
+        self.assertIn("✅ BU GRANTED / VERIFIED", tf_9036["status_badge"])
+
+        # 2. Pilot Deep project (16562 or 13560)
+        res_deep = self.client.get("/api/project/16562")
+        self.assertEqual(res_deep.status_code, 200)
+        d_deep = res_deep.json()
+        self.assertIn("truth_flags", d_deep)
+        tf_deep = d_deep["truth_flags"]
+        self.assertEqual(tf_deep["data_tier"], "pilot_deep")
+        self.assertIn("has_bu_noc", tf_deep)
+        self.assertIn("bu_certificate_no", tf_deep)
+        self.assertIn("bu_date", tf_deep)
+        self.assertIn("months_overdue", tf_deep)
+        self.assertIn("is_legacy_grandfathered", tf_deep)
+        self.assertIn("is_govt_authority", tf_deep)
+        self.assertIn("status_badge", tf_deep)
+
+    def test_insights_endpoints_pii_clean(self):
+        pan_regex = re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b")
+        id_regex = re.compile(r"\b[2-9][0-9]{3}\s?[0-9]{4}\s?[0-9]{4}\b")
+        email_regex = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+        account_regex = re.compile(r'"(?:account_no|account_number|bank_account)":\s*"?([0-9]{9,18})"?')
+
+        endpoints = [
+            "/api/insights/zombie_radar?limit=25",
+            "/api/insights/markup_spread",
+            "/api/insights/developer_clusters",
+        ]
+
+        for ep in endpoints:
+            res = self.client.get(ep)
+            self.assertEqual(res.status_code, 200, f"Endpoint {ep} failed with status {res.status_code}")
+            body = res.text
+            self.assertIsNone(pan_regex.search(body), f"Unredacted PAN found in {ep}: {body[:200]}")
+            self.assertIsNone(id_regex.search(body), f"Unredacted 12-digit ID found in {ep}: {body[:200]}")
+            self.assertIsNone(email_regex.search(body), f"Unredacted email found in {ep}: {body[:200]}")
+            self.assertIsNone(account_regex.search(body), f"Unredacted bank account found in {ep}: {body[:200]}")
 
     def test_api_graph_scoped_ego_network(self):
         pid = 16562

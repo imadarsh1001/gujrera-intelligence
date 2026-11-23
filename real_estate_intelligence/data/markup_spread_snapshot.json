@@ -1,0 +1,95 @@
+{
+  "statewide_baseline_markup_pct": 12.63,
+  "empirical_markup_pct": 12.48,
+  "statewide_transactions_summary": {
+    "BOOKED": {
+      "status": "BOOKED",
+      "unit_count": 1079930,
+      "avg_rate_per_sqft": 4182.84,
+      "avg_consideration": 3236980.52
+    },
+    "UNBOOKED": {
+      "status": "UNBOOKED",
+      "unit_count": 858441,
+      "avg_rate_per_sqft": 4705.03,
+      "avg_consideration": 3918650.44
+    }
+  },
+  "top_districts_breakdown": [
+    {
+      "district": "Ahmedabad",
+      "project_count": 5536,
+      "total_booked_units": 367072,
+      "total_unbooked_units": 295962,
+      "avg_min_rate_sqft_booked": 4736.2
+    },
+    {
+      "district": "Vadodara",
+      "project_count": 2946,
+      "total_booked_units": 192192,
+      "total_unbooked_units": 90389,
+      "avg_min_rate_sqft_booked": 3346.55
+    },
+    {
+      "district": "Surat",
+      "project_count": 2681,
+      "total_booked_units": 220400,
+      "total_unbooked_units": 214753,
+      "avg_min_rate_sqft_booked": 3337.19
+    },
+    {
+      "district": "Rajkot",
+      "project_count": 1970,
+      "total_booked_units": 79224,
+      "total_unbooked_units": 58912,
+      "avg_min_rate_sqft_booked": 2638.57
+    },
+    {
+      "district": "Gandhinagar",
+      "project_count": 1685,
+      "total_booked_units": 115566,
+      "total_unbooked_units": 82162,
+      "avg_min_rate_sqft_booked": 3726.28
+    },
+    {
+      "district": "Bhavnagar",
+      "project_count": 750,
+      "total_booked_units": 25872,
+      "total_unbooked_units": 18201,
+      "avg_min_rate_sqft_booked": 1812.89
+    },
+    {
+      "district": "Valsad",
+      "project_count": 404,
+      "total_booked_units": 19742,
+      "total_unbooked_units": 19427,
+      "avg_min_rate_sqft_booked": 2672.28
+    },
+    {
+      "district": "Anand",
+      "project_count": 315,
+      "total_booked_units": 7936,
+      "total_unbooked_units": 6281,
+      "avg_min_rate_sqft_booked": 3011.76
+    },
+    {
+      "district": "Junagadh",
+      "project_count": 255,
+      "total_booked_units": 4846,
+      "total_unbooked_units": 6887,
+      "avg_min_rate_sqft_booked": 1619.14
+    },
+    {
+      "district": "Jamnagar",
+      "project_count": 227,
+      "total_booked_units": 6035,
+      "total_unbooked_units": 7425,
+      "avg_min_rate_sqft_booked": 2538.29
+    }
+  ],
+  "provenance": {
+    "source": "unit_transactions + project_summaries",
+    "index_used": "idx_unit_status_rates",
+    "statutory_note": "Unbooked rates reflect developer portal asking prices; booked rates reflect verified registered consideration."
+  }
+}
