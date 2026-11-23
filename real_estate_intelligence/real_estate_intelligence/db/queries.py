@@ -8,6 +8,8 @@ import json
 import sqlite3
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from .redaction import redact_payload, redact_record, redact_value
+
 
 def parse_timestamp(raw: Any) -> Optional[datetime]:
     """Parse a portal timestamp into an aware UTC datetime, or None if unparseable."""
@@ -210,7 +212,7 @@ def get_explore_rows(con: sqlite3.Connection) -> List[Dict[str, Any]]:
             }
 
         arch_raw = s.get("architect_names")
-        architects = [a.strip() for a in arch_raw.split(",") if a.strip()] if arch_raw else []
+        architects = [redact_value("name", a.strip()) for a in arch_raw.split(",") if a.strip()] if arch_raw else []
 
         ext_cnt = s.get("extensions_count") or 0
         rev_state = "revision_observed" if ext_cnt > 0 else "insufficient_history"
@@ -349,18 +351,18 @@ def get_project_detail(
     ).fetchone()[0]
 
     return {
-        "project": p_dict,
+        "project": redact_record(p_dict),
         "blocks": blocks,
         "units": units,
         "timeline": timeline,
         "finances": finances,
-        "professionals": professionals,
-        "banks": banks,
+        "professionals": [redact_record(p) for p in professionals],
+        "banks": [redact_record(b) for b in banks],
         "prior_projects": prior,
         "form5": form5,
         "bu_records": bu_records,
-        "leads": leads,
-        "contagion": contagion,
+        "leads": redact_payload(leads),
+        "contagion": redact_payload(contagion),
         "filings_count": filings_count,
         "revision_state": get_revision_state(filings_count, len(ext_rows)),
         "revision_evidence_dates": sorted(
@@ -383,12 +385,15 @@ def get_graph_data(
     """Return nodes and edges formatted for Vis.js (scoped to project ego-network if requested)."""
     if project_id and project_id > 0 and graph_engine is not None:
         try:
-            return graph_engine.get_ego_network(project_id, depth=depth)
+            return redact_payload(graph_engine.get_ego_network(project_id, depth=depth))
         except Exception:
             pass
 
     cur = con.cursor()
-    cur.execute("SELECT node_id, kind, label FROM graph_nodes LIMIT 250")
+    cur.execute(
+        "SELECT node_id, kind, label FROM graph_nodes "
+        "WHERE node_id NOT LIKE 'promoter:None%' AND node_id != 'promoter:' LIMIT 250"
+    )
     color_map = {
         "Project": "#2563eb",
         "Promoter": "#7c3aed",
@@ -401,7 +406,7 @@ def get_graph_data(
     nodes = [
         {
             "id": r["node_id"],
-            "label": r["label"],
+            "label": redact_value("name", r["label"]),
             "group": r["kind"],
             "color": color_map.get(r["kind"], "#3b82f6"),
         }
@@ -409,7 +414,11 @@ def get_graph_data(
     ]
     node_ids = {n["id"] for n in nodes}
 
-    cur.execute("SELECT src_id, relation, dst_id FROM graph_edges")
+    cur.execute(
+        "SELECT src_id, relation, dst_id FROM graph_edges "
+        "WHERE src_id NOT LIKE 'promoter:None%' AND dst_id NOT LIKE 'promoter:None%' "
+        "  AND src_id != 'promoter:' AND dst_id != 'promoter:'"
+    )
     edges = [
         {
             "from": r["src_id"],
@@ -420,4 +429,4 @@ def get_graph_data(
         for r in cur.fetchall()
         if r["src_id"] in node_ids and r["dst_id"] in node_ids
     ]
-    return {"nodes": nodes, "edges": edges}
+    return redact_payload({"nodes": nodes, "edges": edges})

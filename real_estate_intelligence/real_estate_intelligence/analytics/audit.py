@@ -1,8 +1,9 @@
 """Discrepancy and statutory commitment audit engine."""
 
+import re
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..models.schema import DiscrepancyLead
 
@@ -11,14 +12,125 @@ class ProjectAuditor:
     def __init__(self, con: sqlite3.Connection):
         self.con = con
 
-    def audit_project(self, project_id: int) -> List[DiscrepancyLead]:
-        """Run deterministic audit checks for a project across statutory filings."""
+    def check_bu_status(self, project_id: int) -> Dict[str, Any]:
+        """Check whether project has received municipal Building Use (BU) permission / NOC.
+
+        Uses project_summaries.has_bu_noc and noc_bu_records.bu_check rather than
+        the unpopulated projects.bu_status column.
+        """
+        has_bu = False
+        source = None
+        cert_no = None
+
+        # 1. Check project_summaries (populated statewide)
+        srow = self.con.execute(
+            "SELECT has_bu_noc, bu_certificate_no FROM project_summaries WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+        if srow and srow["has_bu_noc"] == 1:
+            has_bu = True
+            source = "project_summaries.has_bu_noc"
+            cert_no = srow["bu_certificate_no"]
+
+        # 2. Check noc_bu_records (46.9k rows statewide)
+        if not has_bu:
+            bu_row = self.con.execute(
+                """
+                SELECT bu_check, bu_date FROM noc_bu_records
+                WHERE project_id = ? AND UPPER(COALESCE(bu_check, '')) = 'YES'
+                LIMIT 1
+                """,
+                (project_id,),
+            ).fetchone()
+            if bu_row:
+                has_bu = True
+                source = "noc_bu_records.bu_check"
+
+        # 3. Fallback: projects.bu_status
+        if not has_bu:
+            prow = self.con.execute(
+                "SELECT bu_status FROM projects WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            if prow and prow["bu_status"] and "Approved" in str(prow["bu_status"]):
+                has_bu = True
+                source = "projects.bu_status"
+
+        return {
+            "has_bu_noc": has_bu,
+            "evidence_source": source,
+            "bu_certificate_no": cert_no,
+        }
+
+    def get_cohort_flags(self, project_id: int) -> Dict[str, bool]:
+        """Compute cohort and statutory entity classification flags for a project.
+
+        Flags:
+            is_legacy_grandfathered: scheduled_completion_year <= 2019 (pre-RERA full rollout).
+            is_govt_authority: promoted/developed by VUDA, AUDA, SUDA, RUDA, GIDC, PMAY, or GHB.
+        """
+        prow = self.con.execute(
+            "SELECT name, promoter_name, completion_date FROM projects WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+        if not prow:
+            return {"is_legacy_grandfathered": False, "is_govt_authority": False}
+
+        is_legacy = False
+        if prow["completion_date"]:
+            try:
+                comp_year = int(str(prow["completion_date"])[:4])
+                if comp_year <= 2019:
+                    is_legacy = True
+            except (ValueError, TypeError):
+                pass
+
+        is_govt = False
+        gov_pattern = re.compile(
+            r"\b(VUDA|AUDA|SUDA|RUDA|GIDC|PMAY|GHB|GUJARAT HOUSING BOARD|URBAN DEVELOPMENT AUTHORITY)\b",
+            re.IGNORECASE,
+        )
+        pname = str(prow["promoter_name"] or "")
+        proj_name = str(prow["name"] or "")
+        if gov_pattern.search(pname) or gov_pattern.search(proj_name):
+            is_govt = True
+
+        return {
+            "is_legacy_grandfathered": is_legacy,
+            "is_govt_authority": is_govt,
+        }
+
+    def audit_project(self, project_id: int, include_skipped: bool = False) -> List[DiscrepancyLead]:
+        """Run deterministic audit checks for a project across statutory filings.
+
+        Parameters:
+            project_id: GujRERA project primary key.
+            include_skipped: If True, explicitly report SKIPPED_UNINGESTED leads when
+                             underlying tables have 0 rows for this project.
+        """
         leads: List[DiscrepancyLead] = []
 
         # Fetch enriched project facts
         prow = self.con.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,)).fetchone()
         if not prow:
             return leads
+
+        cohort = self.get_cohort_flags(project_id)
+        is_legacy = cohort["is_legacy_grandfathered"]
+        is_govt = cohort["is_govt_authority"]
+        bu_info = self.check_bu_status(project_id)
+        has_bu = bu_info["has_bu_noc"]
+
+        # Check whether this is an uningested statewide cohort project
+        is_statewide_unscraped = False
+        try:
+            total_projs = self.con.execute("SELECT COUNT(1) FROM projects").fetchone()[0]
+            if total_projs > 1000:
+                DEEP_AUDIT_IDS = {13560, 13705, 16104, 16562, 17255, 17830, 17855, 20523, 24508}
+                if project_id not in DEEP_AUDIT_IDS:
+                    is_statewide_unscraped = True
+        except Exception:
+            pass
 
         # 1. Financial Expenditure Drop / Cost Reversal
         fin_rows = self.con.execute(
@@ -54,6 +166,18 @@ class ProjectAuditor:
                         ),
                     )
                 )
+        elif len(fin_rows) == 0 and include_skipped:
+            leads.append(
+                DiscrepancyLead(
+                    project_id=project_id,
+                    category="financial",
+                    severity="SKIPPED_UNINGESTED",
+                    title="Form 3 Financial Filings Uningested (Cost Reversal Audit Skipped)",
+                    detail=f"Table finances contains 0 rows for project {project_id} in current database.",
+                    evidence_source="finances table (0 rows)",
+                    reconciliation_guidance="Verify CA Form 3 filings manually in GujRERA portal.",
+                )
+            )
 
         # 2. Construction Velocity & Delay Risk Ratio
         vel_ratio = prow["velocity_ratio"]
@@ -94,19 +218,36 @@ class ProjectAuditor:
                         reconciliation_guidance="Monitor next QPR filing to verify if monthly construction pace has accelerated.",
                     )
                 )
+        elif vel_ratio is None and include_skipped:
+            leads.append(
+                DiscrepancyLead(
+                    project_id=project_id,
+                    category="schedule",
+                    severity="SKIPPED_UNINGESTED",
+                    title="QPR Construction Velocity Data Uningested (Velocity Audit Skipped)",
+                    detail=f"Quarterly engineering score and velocity ratio are unpopulated for project {project_id}.",
+                    evidence_source="projects.velocity_ratio (NULL)",
+                    reconciliation_guidance="Inspect quarterly QPR Form 1 / Form 2 filings in portal.",
+                )
+            )
 
         # 3. Escrow Account Liquidity Depletion
-        escrow_acc = self.con.execute(
+        escrow_rows = self.con.execute(
             """
             SELECT bank_name, closing_bal, deposit_amt, withdrawal_amt
             FROM banks WHERE project_id = ? AND account_type = 1
             """,
             (project_id,),
-        ).fetchone()
+        ).fetchall()
 
-        if escrow_acc:
-            cl_bal = escrow_acc["closing_bal"]
-            if cl_bal is not None and cl_bal < 50_000.0 and engg_score and engg_score < 90.0:
+        valid_balances = [
+            float(r["closing_bal"]) for r in escrow_rows if r["closing_bal"] is not None
+        ]
+
+        if valid_balances:
+            cl_bal = sum(valid_balances)
+            bank_names = ", ".join(set(r["bank_name"] for r in escrow_rows if r["bank_name"]))
+            if cl_bal < 50_000.0 and engg_score and engg_score < 90.0 and not is_govt:
                 leads.append(
                     DiscrepancyLead(
                         project_id=project_id,
@@ -114,7 +255,7 @@ class ProjectAuditor:
                         severity="HIGH",
                         title=f"Escrow 70% Liquidity Depleted: Closing Balance ₹{cl_bal:,.0f}",
                         detail=(
-                            f"The 70% designated RERA retention escrow account at {escrow_acc['bank_name']} "
+                            f"The 70% designated RERA retention escrow account at {bank_names} "
                             f"holds only ₹{cl_bal:,.0f} in closing liquidity, while {100.0 - engg_score:.1f}% of construction remains."
                         ),
                         evidence_source="banks endpoint (Account Type 1 / 70% Retention)",
@@ -124,20 +265,43 @@ class ProjectAuditor:
                         ),
                     )
                 )
+        elif not escrow_rows and include_skipped:
+            leads.append(
+                DiscrepancyLead(
+                    project_id=project_id,
+                    category="financial",
+                    severity="SKIPPED_UNINGESTED",
+                    title="Escrow Account Balances Uningested (Liquidity Audit Skipped)",
+                    detail=f"Table banks holds 0 balance records for project {project_id}.",
+                    evidence_source="banks table (0 rows)",
+                    reconciliation_guidance="Request certified bank statement for designated RERA account.",
+                )
+            )
 
         # 3b. Statutory Section 4(2)(l)(D) Escrow Over-Withdrawal Audit
         # Statutory Rule: Allowed cumulative withdrawal from 70% retention account cannot exceed
-        # estimated total cost multiplied by certified physical completion percentage.
-        # Source: Real Estate (Regulation and Development) Act 2016, Section 4(2)(l)(D) Proviso 1
-        # https://mohua.gov.in/upload/uploadfiles/files/Real_Estate_Act_2016.pdf
-        if escrow_acc and fin_rows:
-            tot_withdrawn = float(escrow_acc["withdrawal_amt"] or 0.0)
+        # eligible incurred costs. Land cost is eligible 100% upfront (baseline 35% of total cost)
+        # and civil construction cost is eligible in proportion to physical completion percentage.
+        if escrow_rows and fin_rows:
+            tot_withdrawn = sum(float(r["withdrawal_amt"] or 0.0) for r in escrow_rows)
+            tot_deposited = sum(float(r["deposit_amt"] or 0.0) for r in escrow_rows)
             est_cost = float(fin_rows[-1]["estimated_cost"] or prow["estimated_cost_inr"] or 0.0)
             progress_pct = float(engg_score or prow["latest_form_one_progress_pct"] or 0.0)
-            if est_cost > 0 and progress_pct > 0 and tot_withdrawn > 0:
-                allowed_withdrawal = est_cost * (progress_pct / 100.0)
+
+            if est_cost > 0 and progress_pct > 0 and tot_withdrawn > 0 and not is_govt:
+                # Land cost is eligible 100% upfront (statutory baseline 35% of total estimated cost)
+                land_cost_ratio = 0.35
+                civil_progress_share = (1.0 - land_cost_ratio) * (progress_pct / 100.0)
+                eligible_fraction = land_cost_ratio + civil_progress_share
+
+                if tot_deposited > 0:
+                    allowed_withdrawal = tot_deposited * min(1.0, eligible_fraction)
+                else:
+                    allowed_withdrawal = est_cost * min(1.0, eligible_fraction)
+
                 if tot_withdrawn > allowed_withdrawal * 1.05:  # 5% buffer for interest / bank fees
                     excess_cr = (tot_withdrawn - allowed_withdrawal) / 10_000_000.0
+                    bank_names = ", ".join(set(r["bank_name"] for r in escrow_rows if r["bank_name"]))
                     leads.append(
                         DiscrepancyLead(
                             project_id=project_id,
@@ -146,19 +310,32 @@ class ProjectAuditor:
                             title=f"Statutory 70% Escrow Over-Withdrawal: Excess ₹{excess_cr:.2f} Cr Withdrawn Ahead of Progress",
                             detail=(
                                 f"Under RERA Section 4(2)(l)(D), cumulative withdrawals from the 70% Designated Retention Escrow "
-                                f"account (reported as ₹{tot_withdrawn / 10_000_000:.2f} Cr) cannot exceed the certified physical progress "
-                                f"share of total estimated cost (₹{allowed_withdrawal / 10_000_000:.2f} Cr based on {progress_pct:.1f}% progress). "
+                                f"account at {bank_names} (reported as ₹{tot_withdrawn / 10_000_000:.2f} Cr) cannot exceed the certified "
+                                f"eligible progress share (₹{allowed_withdrawal / 10_000_000:.2f} Cr based on {progress_pct:.1f}% civil progress "
+                                f"and an estimated baseline heuristic of 35% land cost allocation, not a verified filing figure). "
                                 f"Excess uncertified funds withdrawn: ₹{excess_cr:.2f} Cr."
                             ),
-                            evidence_source="banks (Account Type 1 withdrawalAmt) vs Form 1 Progress % x Form 3 Estimated Cost",
+                            evidence_source="banks (Account Type 1 withdrawal_amt) vs Form 1 Progress % x Estimated Baseline Heuristic (35% Land Cost)",
                             reconciliation_guidance=(
                                 "Audit signed Form 3 CA withdrawal certificates and Form 1 architect certificates. "
                                 "Verify whether excess withdrawals were utilized for unauthorized non-project expenditures or land purchase."
                             ),
                         )
                     )
+        elif (not escrow_rows or not fin_rows) and include_skipped:
+            leads.append(
+                DiscrepancyLead(
+                    project_id=project_id,
+                    category="financial",
+                    severity="SKIPPED_UNINGESTED",
+                    title="Section 4(2)(l)(D) Escrow Audit Skipped (Finances or Escrow Uningested)",
+                    detail=f"Financial or escrow filings are unpopulated for project {project_id}.",
+                    evidence_source="finances / banks (0 rows)",
+                    reconciliation_guidance="Obtain certified Form 3 CA withdrawal certificates and bank statements.",
+                )
+            )
 
-        # 4. Registered Completion Date Expired Without Form 4
+        # 4. Registered Completion Date Expired Without Form 4 or BU NOC
         if prow["completion_date"]:
             comp_date_str = str(prow["completion_date"])[:10]
             form4_row = self.con.execute(
@@ -166,28 +343,34 @@ class ProjectAuditor:
                 (project_id,),
             ).fetchone()[0]
 
-            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            if comp_date_str < "2026-10-15" and form4_row == 0:
+            # Project is completed and occupied if municipal BU NOC is on record
+            if comp_date_str < "2026-10-15" and not has_bu and form4_row == 0:
+                detail_note = ""
+                if is_legacy:
+                    detail_note = " (Note: Grandfathered legacy scheme with scheduled completion <= 2019)."
+                elif is_govt:
+                    detail_note = " (Note: Public/governmental authority development scheme)."
+
                 leads.append(
                     DiscrepancyLead(
                         project_id=project_id,
                         category="schedule",
-                        severity="HIGH",
-                        title="Registered Completion Date Expired Without Form 4 Completion Certificate",
+                        severity="LOW" if (is_legacy or is_govt) else "HIGH",
+                        title="Registered Completion Date Expired Without Form 4 or BU NOC",
                         detail=(
                             f"The project's statutory completion deadline was {comp_date_str}, which has passed. "
-                            f"No Form 4 Architect Completion Certificate is on file."
+                            f"No Form 4 Architect Completion Certificate or Municipal BU NOC has been recorded.{detail_note}"
                         ),
-                        evidence_source="Project Details (completionDate) vs Form 4 Catalog",
+                        evidence_source="projects (completion_date) vs project_summaries.has_bu_noc & noc_bu_records",
                         reconciliation_guidance=(
-                            "Verify if promoter filed an extension application (Section 6) or if construction was delayed. "
+                            "Verify if promoter filed an extension application (Section 6) or if municipal BU NOC was issued under local authority. "
                             "Inspect whether allottees were granted delay interest compensation."
                         ),
                     )
                 )
 
         # 5. Active Consumer Complaints
-        complaint_cnt = prow["complaints_count"]
+        complaint_cnt = prow["complaints_count"] or 0
         if complaint_cnt > 0:
             leads.append(
                 DiscrepancyLead(
@@ -204,7 +387,7 @@ class ProjectAuditor:
             )
 
         # 6. Post-Registration Sanctioned Layout Alterations (Section 14)
-        alt_cnt = prow["alterations_count"]
+        alt_cnt = prow["alterations_count"] or 0
         if alt_cnt > 0:
             leads.append(
                 DiscrepancyLead(
@@ -223,9 +406,26 @@ class ProjectAuditor:
                     ),
                 )
             )
+        else:
+            apps_cnt = self.con.execute(
+                "SELECT COUNT(*) FROM applications WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()[0]
+            if apps_cnt == 0 and include_skipped:
+                leads.append(
+                    DiscrepancyLead(
+                        project_id=project_id,
+                        category="regulatory",
+                        severity="SKIPPED_UNINGESTED",
+                        title="Section 14 Alteration Application Filings Uningested",
+                        detail=f"Table applications contains 0 rows for project {project_id}.",
+                        evidence_source="applications table (0 rows)",
+                        reconciliation_guidance="Verify Section 14 layout alteration filings in portal archives.",
+                    )
+                )
 
         # 7. Missed Statutory Quarterly Returns (QPR Defaults)
-        def_cnt = prow["default_quarters_count"]
+        def_cnt = prow["default_quarters_count"] or 0
         if def_cnt > 0:
             leads.append(
                 DiscrepancyLead(
@@ -242,6 +442,23 @@ class ProjectAuditor:
                     ),
                 )
             )
+        else:
+            qpr_cnt = self.con.execute(
+                "SELECT COUNT(*) FROM quarterly_timeline WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()[0]
+            if qpr_cnt == 0 and prow["default_quarters_count"] is None and include_skipped:
+                leads.append(
+                    DiscrepancyLead(
+                        project_id=project_id,
+                        category="statutory",
+                        severity="SKIPPED_UNINGESTED",
+                        title="Quarterly Timeline Filings Uningested (QPR Defaults Audit Skipped)",
+                        detail=f"Quarterly filing index holds 0 records for project {project_id}.",
+                        evidence_source="quarterly_timeline table (0 rows)",
+                        reconciliation_guidance="Check GujRERA portal for quarterly return defaults.",
+                    )
+                )
 
         # 8. Overdue Form 5 CA Annual Audits
         pending_f5 = self.con.execute(
@@ -269,6 +486,23 @@ class ProjectAuditor:
                     reconciliation_guidance="Request certified copies of annual audited accounts for the pending fiscal years.",
                 )
             )
+        else:
+            f5_total = self.con.execute(
+                "SELECT COUNT(*) FROM form5_compliance WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()[0]
+            if f5_total == 0 and include_skipped:
+                leads.append(
+                    DiscrepancyLead(
+                        project_id=project_id,
+                        category="statutory",
+                        severity="SKIPPED_UNINGESTED",
+                        title="Form 5 CA Annual Compliance Filings Uningested",
+                        detail=f"Table form5_compliance contains 0 rows for project {project_id}.",
+                        evidence_source="form5_compliance table (0 rows)",
+                        reconciliation_guidance="Obtain annual Form 5 CA certificates directly from developer or portal.",
+                    )
+                )
 
         # 9. Institutional Loans & Mortgages Disclosed
         loans_cnt = self.con.execute(
@@ -290,6 +524,18 @@ class ProjectAuditor:
                     reconciliation_guidance=(
                         "Obtain Bank NOC for conveyance before final unit registration to confirm release of charge."
                     ),
+                )
+            )
+        elif len(fin_rows) == 0 and include_skipped:
+            leads.append(
+                DiscrepancyLead(
+                    project_id=project_id,
+                    category="statutory",
+                    severity="SKIPPED_UNINGESTED",
+                    title="Form 3 Institutional Loan Disclosures Uningested",
+                    detail=f"Form 3 financial loan disclosure records are unpopulated for project {project_id}.",
+                    evidence_source="finances table (0 rows)",
+                    reconciliation_guidance="Inspect physical Form 3 filings to confirm whether bank charges exist.",
                 )
             )
 
@@ -326,6 +572,18 @@ class ProjectAuditor:
                     ),
                 )
             )
+        elif not has_financial_activity and form3_count == 0 and include_skipped:
+            leads.append(
+                DiscrepancyLead(
+                    project_id=project_id,
+                    category="statutory",
+                    severity="SKIPPED_UNINGESTED",
+                    title="Form 3 CA Certificate Documents Uningested",
+                    detail=f"No Form 3 CA certificate PDF records exist in documents catalog for project {project_id}.",
+                    evidence_source="documents_catalog table (doc_type='form_three_ca', 0 rows)",
+                    reconciliation_guidance="Verify CA certificate documents in GujRERA portal.",
+                )
+            )
 
         prof_rows = self.con.execute(
             "SELECT role, name, firm_name, license_or_reg_no FROM professionals WHERE project_id = ?",
@@ -333,23 +591,40 @@ class ProjectAuditor:
         ).fetchall()
 
         architects = [r for r in prof_rows if r["role"].lower() == "architect"]
+
         if not architects:
-            leads.append(
-                DiscrepancyLead(
-                    project_id=project_id,
-                    category="statutory",
-                    severity="MEDIUM",
-                    title="No Statutory Architect Assigned in Project Registration",
-                    detail=(
-                        "Project registration records do not contain a designated architect assignment. "
-                        "Section 4 requires an architect to certify physical milestone percentage via Form 1."
-                    ),
-                    evidence_source="professionals table (role='architect')",
-                    reconciliation_guidance=(
-                        "Inspect Form 1 filings to confirm whether a licensed architect has certified milestone progress."
-                    ),
+            if is_statewide_unscraped:
+                # In statewide ingestion tier, architect data was never scraped statewide.
+                # Avoid false-positive statutory breach allegation; report as SKIPPED_UNINGESTED if requested.
+                if include_skipped:
+                    leads.append(
+                        DiscrepancyLead(
+                            project_id=project_id,
+                            category="statutory",
+                            severity="SKIPPED_UNINGESTED",
+                            title="Statutory Architect Filings Uningested (Statewide Lake Omission)",
+                            detail="Statutory architect filings were not extracted statewide in current ingestion wave.",
+                            evidence_source="professionals table (statewide tier)",
+                            reconciliation_guidance="Verify physical Form 1 / application disclosures in GujRERA portal.",
+                        )
+                    )
+            else:
+                leads.append(
+                    DiscrepancyLead(
+                        project_id=project_id,
+                        category="statutory",
+                        severity="MEDIUM",
+                        title="No Statutory Architect Assigned in Project Registration",
+                        detail=(
+                            "Project registration records do not contain a designated architect assignment. "
+                            "Section 4 requires an architect to certify physical milestone percentage via Form 1."
+                        ),
+                        evidence_source="professionals table (role='architect')",
+                        reconciliation_guidance=(
+                            "Inspect Form 1 filings to confirm whether a licensed architect has certified milestone progress."
+                        ),
+                    )
                 )
-            )
         else:
             for arch in architects:
                 reg_no = arch["license_or_reg_no"]
@@ -412,6 +687,31 @@ class ProjectAuditor:
 
         return leads
 
+    def audit_rule_coverage(self, project_id: int) -> Dict[str, Any]:
+        """Audit statutory rule evaluation census and report triggered, clean, and skipped rules."""
+        prow = self.con.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,)).fetchone()
+        if not prow:
+            return {"error": f"Project {project_id} not found"}
+
+        cohort = self.get_cohort_flags(project_id)
+        bu_info = self.check_bu_status(project_id)
+
+        all_leads = self.audit_project(project_id, include_skipped=True)
+        active_leads = [l for l in all_leads if l.severity != "SKIPPED_UNINGESTED"]
+        skipped_leads = [l for l in all_leads if l.severity == "SKIPPED_UNINGESTED"]
+
+        return {
+            "project_id": project_id,
+            "is_legacy_grandfathered": cohort["is_legacy_grandfathered"],
+            "is_govt_authority": cohort["is_govt_authority"],
+            "has_bu_noc": bu_info["has_bu_noc"],
+            "bu_evidence_source": bu_info["evidence_source"],
+            "total_active_leads": len(active_leads),
+            "total_skipped_rules": len(skipped_leads),
+            "leads": active_leads,
+            "skipped_rules": skipped_leads,
+        }
+
     def audit_credential_coverage(self, project_id: int) -> Dict[str, Any]:
         """Audit statutory signer and professional credential coverage matrix for a project."""
         prow = self.con.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,)).fetchone()
@@ -446,8 +746,21 @@ class ProjectAuditor:
         f3_verified = [d for d in f3_docs if d["sha256"]]
 
         gap_codes = []
+        is_statewide_unscraped = False
+        try:
+            total_projs = self.con.execute("SELECT COUNT(1) FROM projects").fetchone()[0]
+            if total_projs > 1000:
+                DEEP_AUDIT_IDS = {13560, 13705, 16104, 16562, 17255, 17830, 17855, 20523, 24508}
+                if project_id not in DEEP_AUDIT_IDS:
+                    is_statewide_unscraped = True
+        except Exception:
+            pass
+
         if not architects:
-            gap_codes.append("registration_architect_profile_unassigned")
+            if not is_statewide_unscraped:
+                gap_codes.append("registration_architect_profile_unassigned")
+            else:
+                gap_codes.append("registration_architect_profile_uningested")
         elif len(arch_verified) == 0:
             gap_codes.append("registration_architect_profile_unverified")
         elif len(arch_verified) < len(architects):
@@ -501,11 +814,11 @@ class ProjectAuditor:
         if not prow:
             return {"error": f"Project {project_id} not found"}
 
-        escrow_acc = self.con.execute(
+        escrow_rows = self.con.execute(
             "SELECT closing_bal FROM banks WHERE project_id = ? AND account_type = 1",
             (project_id,),
-        ).fetchone()
-        closing_bal = float(escrow_acc["closing_bal"] or 0.0) if escrow_acc else 0.0
+        ).fetchall()
+        closing_bal = max([float(r["closing_bal"] or 0.0) for r in escrow_rows] or [0.0])
 
         est_cost = float(prow["estimated_cost_inr"] or 0.0)
         inc_cost = float(prow["incurred_cost_inr"] or 0.0)

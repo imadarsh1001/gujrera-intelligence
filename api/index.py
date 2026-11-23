@@ -27,6 +27,7 @@ import math
 import os
 import sys
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
@@ -35,6 +36,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastmcp.utilities.lifespan import combine_lifespans
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,7 @@ from real_estate_intelligence.db.queries import (
 )
 from real_estate_intelligence.documents.search import DocumentSearchEngine
 from real_estate_intelligence.graph.network import KnowledgeGraph
+from real_estate_intelligence.mcp.fastmcp_app import mcp
 from real_estate_intelligence.mcp.server import RealEstateIntelligenceMCP
 
 
@@ -148,11 +151,53 @@ def _proxy_cache_put(cache_key: str, value: Any):
         _PROXY_CACHE_ORDER.append(cache_key)
 
 
+@asynccontextmanager
+async def existing_lifespan(app: FastAPI):
+    """Ensure database connection and analytics backends are initialized."""
+    AppState.get_backends()
+    yield
+
+
+mcp_app = mcp.http_app(path="/", stateless_http=True)
+
+
+class MCPGatewayMiddleware:
+    """Handles exact /mcp path rewrite (preventing 307 redirect) and optional Bearer auth scoped to /mcp."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if path == "/mcp" or path.startswith("/mcp/"):
+                mcp_key = os.environ.get("MCP_API_KEY")
+                if mcp_key and mcp_key.strip():
+                    headers = dict(scope.get("headers", []))
+                    auth_header = headers.get(b"authorization", b"").decode("latin1").strip()
+                    expected_header = f"Bearer {mcp_key.strip()}"
+                    if auth_header != expected_header:
+                        resp = JSONResponse(
+                            {"jsonrpc": "2.0", "error": {"code": -32001, "message": "Unauthorized"}},
+                            status_code=401,
+                        )
+                        await resp(scope, receive, send)
+                        return
+
+                if path == "/mcp":
+                    scope["path"] = "/mcp/"
+
+        await self.app(scope, receive, send)
+
+
 app = FastAPI(
     title="GujRERA Real Estate Intelligence Platform",
     description="Sovereign institutional real estate analytics engine for Gujarat RERA",
     version="1.0.0",
+    lifespan=combine_lifespans(existing_lifespan, mcp_app.lifespan),
 )
+
+app.add_middleware(MCPGatewayMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -172,6 +217,9 @@ STATIC_DIR = next((p for p in candidates_static if p.exists() and (p / "index.ht
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Mount MCP Streamable HTTP gateway at /mcp
+app.mount("/mcp", mcp_app)
 
 
 @app.get("/api/health")

@@ -51,6 +51,7 @@ gujrera_pipeline/
 # IDE and assistant configuration
 .claude/
 .vscode/
+.agents/
 
 # Knowledge graph and intermediate tooling artifacts
 graphify-out/

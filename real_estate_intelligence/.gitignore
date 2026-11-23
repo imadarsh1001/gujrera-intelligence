@@ -9,3 +9,4 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+.agents/mcp_config.json

@@ -3,3 +3,4 @@
 -e ./real_estate_intelligence
 pypdf>=5.0.0
 uvicorn>=0.30.0
+fastmcp==4.2.4

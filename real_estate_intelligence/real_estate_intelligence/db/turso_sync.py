@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 import libsql
 
 from .database import init_schema
+from .redaction import redact_record, redact_value
 from ..config import DEFAULT_DB_PATH
 
 
@@ -110,9 +111,30 @@ def sync_to_turso(
             if not rows:
                 break
 
-            val_placeholders = ", ".join([placeholders_one] * len(rows))
+            if table == "professionals":
+                staged_rows = []
+                for row in rows:
+                    rec = dict(zip(col_names, row))
+                    redacted = redact_record(rec)
+                    staged_rows.append([redacted.get(c) for c in col_names])
+            elif table == "banks":
+                staged_rows = []
+                for row in rows:
+                    rec = dict(zip(col_names, row))
+                    if "account_no" in rec and rec["account_no"] is not None:
+                        rec["account_no"] = redact_value("account_no", rec["account_no"])
+                    if "account_number_masked" in rec and rec["account_number_masked"] is not None:
+                        rec["account_number_masked"] = redact_value("account_number_masked", rec["account_number_masked"])
+                    if "account_name" in rec and rec["account_name"] is not None:
+                        rec["account_name"] = redact_value("account_name", rec["account_name"])
+                    redacted = redact_record(rec)
+                    staged_rows.append([redacted.get(c) for c in col_names])
+            else:
+                staged_rows = [list(row) for row in rows]
+
+            val_placeholders = ", ".join([placeholders_one] * len(staged_rows))
             sql = f'INSERT OR REPLACE INTO "{table}" ({quoted_cols}) VALUES {val_placeholders}'
-            flat_vals = [val for row in rows for val in row]
+            flat_vals = [val for row in staged_rows for val in row]
 
             # Execute with retries for network resilience
             max_retries = 3
