@@ -178,3 +178,15 @@ Before any legacy files were deleted:
 
 ### 6.2 Pre-Aggregated Tables & The 1.95M-Row Aggregation Regression
 - The 1.95M-row aggregation regression was caught by the P4 smoke test before the user's click-through — the pre-aggregated summaries table existed for exactly this purpose.
+
+---
+
+## 7. Graphify Knowledge Graph Tooling on Windows
+
+### 7.1 One-Shot Graphify Rebuild Workflow (WDAC, Dependencies & Rate Limits)
+- **WDAC `.exe` Block**: Windows Application Control blocks the `uv` shim `graphify.exe`. Invoke the module directly through the tool interpreter instead:
+  `D:\uv-tools\graphifyy\Scripts\python.exe -m graphify`
+- **Tool Dependency (`openai`)**: Installed `openai` directly into `D:\uv-tools\graphifyy\Scripts\python.exe` (`uv pip install --python D:\uv-tools\graphifyy\Scripts\python.exe openai`) so `.venv` `PYTHONPATH` overrides are unnecessary.
+- **Rate-Limit Safe Rebuild Command**: Graphify's default Gemini model (`gemini-3-flash-preview`) and `60000`-token chunks can hit `429` limits or omit files on large markdown corpora. Load `GEMINI_API_KEY` from `.env`, set `GRAPHIFY_GEMINI_MODEL=gemini-3.1-flash-lite-preview`, and run:
+  `D:\uv-tools\graphifyy\Scripts\python.exe -m graphify . --token-budget 20000 --max-concurrency 1`
+- **Stale Community Labels Gotcha**: After major `.graphifyignore` changes that drop or renumber communities, delete `graphify-out/.graphify_labels.json` before running `D:\uv-tools\graphifyy\Scripts\python.exe -m graphify cluster-only . --max-concurrency 1` so old hub/community names are not recycled into `graphify-out/GRAPH_REPORT.md`.
