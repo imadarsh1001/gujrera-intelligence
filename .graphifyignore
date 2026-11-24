@@ -1,0 +1,60 @@
+# Graphify scope: only code and docs we wrote (gitignore syntax)
+
+# Vendored / minified front-end bundles & source maps
+vendor/
+webfonts/
+*.min.js
+*.min.css
+*.js.map
+*.css.map
+
+# Large generated data assets
+gujarat_map.json
+
+# Package caches & environments
+.uv-cache/
+.venv/
+.env
+.env.*
+
+# Other code-intelligence tool output
+graphify-out/
+.repowise/
+.archify/
+.codegraph/
+.zcode/
+
+# IDE, assistant stubs & deployment tooling
+.claude/
+.agents/
+.github/copilot-instructions.md
+.vscode/
+.vercel/
+coverage/
+
+# Databases, raw pipelines & data
+/data/
+/real_estate_intelligence/data/
+gujrera_pipeline/data/
+collected_data/
+legacy/
+raw_data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.db
+*.duckdb
+*.parquet
+*.csv
+*.pkl
+
+# Local draft plans and review scratchpads (authoritative even if tracked in Git)
+design_draft.md
+goldfish_review_report.md
+statewide_plan.md
+docs/STATEWIDE_INGESTION_PLAN.md
+docs/reviews/
+
+# Logs
+*.log

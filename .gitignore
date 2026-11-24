@@ -2,6 +2,10 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
+*.egg
+build/
+dist/
 
 # Virtual environments
 .venv/
@@ -23,13 +27,20 @@ Thumbs.db
 
 # Testing & Cache
 .pytest_cache/
-.repowise
-*./cache
+.ruff_cache/
+.mypy_cache/
+.cache/
+.coverage
+htmlcov/
+coverage.xml
 
 # Temporary SQLite journals, locks, and statewide intelligence databases
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+knowledge_graph.sqlite*
+*.db
+*.duckdb
 *intelligence*.sqlite
 !real_estate_intelligence/data/test_intelligence.sqlite
 
@@ -42,11 +53,9 @@ gujrera_pipeline/
 # Environment files and credentials
 .env
 .env.*
+!.env.example
 *.key
 *.pem
-
-*.repowise
-*./cache
 
 # IDE and assistant configuration
 .claude/
@@ -56,16 +65,19 @@ gujrera_pipeline/
 
 # Knowledge graph and intermediate tooling artifacts
 graphify-out/
+.repowise/
 .codegraph/
 .archify/
+.zcode/
 
 # Frontend builds and dependencies
-frontend/node_modules/
-frontend/dist/
+node_modules/
+coverage/
+.vite/
+.vercel/
 *.tsbuildinfo
 
 # Agent checkpoints
-data/agent_checkpoints.sqlite*
 real_estate_intelligence/data/agent_checkpoints.sqlite*
 
 # Local draft plans and review scratchpads
@@ -78,4 +90,3 @@ docs/reviews/
 
 # Redundant root data directory (primary data in real_estate_intelligence/data/)
 /data/
-data/merged_2026-11-13/
