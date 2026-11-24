@@ -3,6 +3,9 @@
 import argparse
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Ensure workspace root and real_estate_intelligence package are on sys.path
 workspace_root = Path(__file__).resolve().parent

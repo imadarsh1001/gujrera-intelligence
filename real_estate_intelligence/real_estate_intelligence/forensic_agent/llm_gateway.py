@@ -8,11 +8,12 @@ with headers:
 
 Gracefully handles Cloudflare Guardrails error codes 2016 and 2017.
 Detects missing credentials and signals offline_mode=True.
+Supports separate router and synthesis models with synchronous guardrail enforcement.
 """
 
 import os
 import re
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from langchain_openai import ChatOpenAI
 
 
@@ -34,6 +35,8 @@ def get_llm(
     llm_override: Optional[Any] = None,
     model_name: Optional[str] = None,
     temperature: float = 0.0,
+    disable_streaming: bool = True,
+    max_tokens: Optional[int] = None,
 ) -> Tuple[Optional[Any], bool]:
     """Obtain the chat LLM instance or determine offline fallback mode.
 
@@ -41,6 +44,8 @@ def get_llm(
         llm_override: Injected mock/fake chat model for tests.
         model_name: Model identifier (defaults to CF_MODEL_NAME or 'gpt-4o-mini').
         temperature: Sampling temperature (default 0.0 for deterministic forensic analysis).
+        disable_streaming: Enforce synchronous execution for guardrail enforcement.
+        max_tokens: Optional completion token cap.
 
     Returns:
         (llm_instance, offline_mode_bool)
@@ -59,14 +64,51 @@ def get_llm(
     base_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
     headers = {"cf-aig-gateway-id": gateway_id}
 
-    llm = ChatOpenAI(
-        model=model,
-        api_key=api_token,
-        base_url=base_url,
-        default_headers=headers,
-        temperature=temperature,
-    )
+    kwargs: Dict[str, Any] = {
+        "model": model,
+        "api_key": api_token,
+        "base_url": base_url,
+        "default_headers": headers,
+        "temperature": temperature,
+        "disable_streaming": disable_streaming,
+    }
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+
+    llm = ChatOpenAI(**kwargs)
     return llm, False
+
+
+def get_router_llm(
+    llm_override: Optional[Any] = None,
+    temperature: float = 0.0,
+    max_tokens: int = 384,
+) -> Tuple[Optional[Any], bool]:
+    """Obtain the fast router LLM for coordinator routing."""
+    model = os.getenv("CF_ROUTER_MODEL") or "@cf/ibm-granite/granite-4.0-h-micro"
+    return get_llm(
+        llm_override=llm_override,
+        model_name=model,
+        temperature=temperature,
+        disable_streaming=True,
+        max_tokens=max_tokens,
+    )
+
+
+def get_synthesis_llm(
+    llm_override: Optional[Any] = None,
+    temperature: float = 0.0,
+    max_tokens: int = 3072,
+) -> Tuple[Optional[Any], bool]:
+    """Obtain the synthesis LLM for evidence-grounded answer generation."""
+    model = os.getenv("CF_SYNTHESIS_MODEL") or os.getenv("CF_MODEL_NAME", "gpt-4o-mini")
+    return get_llm(
+        llm_override=llm_override,
+        model_name=model,
+        temperature=temperature,
+        disable_streaming=True,
+        max_tokens=max_tokens,
+    )
 
 
 def parse_cloudflare_guardrail_error(error: Exception) -> Optional[str]:

@@ -49,19 +49,22 @@ class SalesClaimVerifier:
 
         # 1. Price Verification
         if claimed_rate_sqft:
+            deed_count = 0
             if trailing_stats.get("median") and trailing_stats.get("count", 0) >= 3:
                 median_rate = trailing_stats["median"]
                 min_rate = trailing_stats.get("min", median_rate)
                 max_rate = trailing_stats.get("max", median_rate)
+                deed_count = int(trailing_stats.get("count", 0))
                 benchmark_type = "Trailing 4-Quarter Booked Median"
-                stat_actual_str = f"Trailing 4Q Median Rs. {median_rate:,.0f} (Range Rs. {min_rate:,.0f} - Rs. {max_rate:,.0f}, {int(trailing_stats.get('count', 0))} deeds)"
+                stat_actual_str = f"Trailing 4Q Median Rs. {median_rate:,.0f} (Range Rs. {min_rate:,.0f} - Rs. {max_rate:,.0f}, {deed_count} deeds)"
             elif ac_stats.get("median"):
                 median_rate = ac_stats["median"]
                 min_rate = ac_stats.get("min", median_rate)
                 max_rate = ac_stats.get("max", median_rate)
+                deed_count = int(ac_stats.get("count", 0))
                 ac_label = "All Assets" if is_all_ac else (asset_class or "Residential")
                 benchmark_type = f"{ac_label} Lifetime Median"
-                stat_actual_str = f"Lifetime Median Rs. {median_rate:,.0f} (Range Rs. {min_rate:,.0f} - Rs. {max_rate:,.0f}, {int(ac_stats.get('count', 0))} deeds)"
+                stat_actual_str = f"Lifetime Median Rs. {median_rate:,.0f} (Range Rs. {min_rate:,.0f} - Rs. {max_rate:,.0f}, {deed_count} deeds)"
             else:
                 median_rate = None
 
@@ -99,6 +102,9 @@ class SalesClaimVerifier:
                     "trailing_window_start": pricing_data.get("trailing_window_start"),
                     "trailing_window_end": pricing_data.get("trailing_window_end"),
                     "stale_deed_warning": pricing_data.get("stale_deed_warning", False),
+                    "empirical_median": round(float(median_rate), 2),
+                    "spread_pct": float(diff_pct),
+                    "deed_count": deed_count,
                     "historical_context": historical_ctx,
                 })
 

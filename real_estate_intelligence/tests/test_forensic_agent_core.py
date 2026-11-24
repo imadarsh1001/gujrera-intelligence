@@ -225,11 +225,11 @@ def test_offline_mode_disambiguation(agent_test_env):
     """Verify offline mode lists candidates when search query matches multiple projects."""
     client = TestClient(app)
 
-    # 1. Multiple matches: SHREEJI ASSOCIATES (present in Vadodara and Rajkot)
+    # 1. Multiple matches: Shaligram Prime (real homonyms: 9036 Ahmedabad, 14360 Junagadh, 30586 Banaskantha)
     payload_multi = {
         "run_id": "r_multi",
         "thread_id": "t_multi",
-        "messages": [{"id": "m_multi", "role": "user", "content": "SHREEJI ASSOCIATES"}],
+        "messages": [{"id": "m_multi", "role": "user", "content": "Shaligram Prime"}],
     }
     res_multi = client.post("/api/agent", json=payload_multi)
     assert res_multi.status_code == 200
@@ -249,7 +249,30 @@ def test_offline_mode_disambiguation(agent_test_env):
 
     assert "Multiple projects matched" in text_multi
     assert "[pid:9036]" in text_multi
-    assert "[pid:9037]" in text_multi
+    assert "[pid:14360]" in text_multi
+    assert "[pid:30586]" in text_multi
+
+    # Also test SHREEJI ASSOCIATES promoter multi-scheme search
+    payload_shreeji = {
+        "run_id": "r_shreeji",
+        "thread_id": "t_shreeji",
+        "messages": [{"id": "m_shreeji", "role": "user", "content": "SHREEJI ASSOCIATES"}],
+    }
+    res_shreeji = client.post("/api/agent", json=payload_shreeji)
+    assert res_shreeji.status_code == 200
+    events_sh = parse_sse_events(res_shreeji.text)
+    text_sh = "".join(
+        e.get("delta") or e.get("content") or ""
+        for e in events_sh
+        if str(e.get("type", "")).upper() == "TEXT_MESSAGE_CONTENT"
+    )
+    if not text_sh:
+        for e in events_sh:
+            if str(e.get("type", "")).upper() == "MESSAGES_SNAPSHOT":
+                for m in e.get("messages", []):
+                    text_sh += m.get("content", "")
+    assert "Multiple projects matched" in text_sh
+    assert any(pid_str in text_sh for pid_str in ("[pid:4509]", "[pid:4517]", "[pid:4639]", "[pid:8562]"))
 
     # 2. Zero matches: random non-existent project
     payload_zero = {
@@ -594,7 +617,7 @@ def test_offline_query_name_resolution(agent_test_env):
     payload = {
         "run_id": "r_name_res",
         "thread_id": "t_name_res",
-        "messages": [{"id": "m_nr", "role": "user", "content": "is 8200 in 2024 fair for Shaligram Prime?"}],
+        "messages": [{"id": "m_nr", "role": "user", "content": "is 8200 in 2024 fair for Skydeck Serene?"}],
     }
     res = client.post("/api/agent", json=payload)
     assert res.status_code == 200
@@ -611,8 +634,8 @@ def test_offline_query_name_resolution(agent_test_env):
                 for m in e.get("messages", []):
                     full_text += m.get("content", "")
 
-    # Must resolve to Shaligram Prime (pid 14360), NOT 8200 or 2024
-    assert "[pid:14360]" in full_text
+    # Must resolve to Skydeck Serene (pid 13560), NOT 8200 or 2024
+    assert "[pid:13560]" in full_text
     assert "[pid:8200]" not in full_text
     assert "[pid:2024]" not in full_text
 
@@ -631,11 +654,11 @@ def test_turn_2_name_switch_overrides_active_pid(agent_test_env):
     res1 = client.post("/api/agent", json=p1)
     assert res1.status_code == 200
 
-    # Turn 2: Query Shaligram Prime by name (should override active_project_id 9036 to 14360)
+    # Turn 2: Query Skydeck Serene by name (should override active_project_id 9036 to 13560)
     p2 = {
         "run_id": "r_sw_2",
         "thread_id": thread_id,
-        "messages": [{"id": "m_sw2", "role": "user", "content": "Audit Shaligram Prime"}],
+        "messages": [{"id": "m_sw2", "role": "user", "content": "Audit Skydeck Serene"}],
     }
     res2 = client.post("/api/agent", json=p2)
     assert res2.status_code == 200
@@ -652,7 +675,7 @@ def test_turn_2_name_switch_overrides_active_pid(agent_test_env):
                 for m in e.get("messages", []):
                     text2 += m.get("content", "")
 
-    assert "[pid:14360]" in text2
+    assert "[pid:13560]" in text2
     assert "[pid:9036]" not in text2
 
 

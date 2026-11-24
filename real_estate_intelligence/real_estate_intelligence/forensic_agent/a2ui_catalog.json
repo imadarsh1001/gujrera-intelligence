@@ -1,0 +1,186 @@
+{
+  "$schema": "https://ag-ui.dev/schemas/a2ui-catalog-v1.0.json",
+  "catalog_version": "1.0.0",
+  "protocol": "A2UI 1.0",
+  "components": {
+    "DossierTruthCard": {
+      "description": "Executive 4-quadrant diligence card displaying statutory truth flags, RERA registration, and municipal BU status.",
+      "properties": {
+        "project_id": {"type": "integer"},
+        "project_name": {"type": "string"},
+        "promoter_name": {"type": "string", "nullable": true},
+        "district": {"type": "string", "nullable": true},
+        "registration_number": {"type": "string", "nullable": true},
+        "approved_units": {"type": "integer", "nullable": true},
+        "carpet_sqft": {"type": "number", "nullable": true},
+        "truth_flags": {
+          "type": "object",
+          "properties": {
+            "has_bu_noc": {"type": "boolean"},
+            "bu_status": {"type": "string"},
+            "bu_certificate_no": {"type": "string", "nullable": true},
+            "bu_evidence": {"type": "string"},
+            "bu_date": {"type": "string", "nullable": true},
+            "bu_blocks_granted": {"type": "integer"},
+            "bu_blocks_total": {"type": "integer"},
+            "months_overdue": {"type": "integer"},
+            "is_legacy_grandfathered": {"type": "boolean"},
+            "is_govt_authority": {"type": "boolean"},
+            "status_badge": {"type": "string"},
+            "data_tier": {"type": "string"}
+          },
+          "required": ["has_bu_noc", "status_badge", "data_tier"]
+        }
+      },
+      "required": ["project_id", "project_name", "truth_flags"]
+    },
+    "ClaimVerdictCard": {
+      "description": "Sales claim verification verdict card comparing advertised broker prices or absorption against registered benchmarks.",
+      "properties": {
+        "project_id": {"type": "integer"},
+        "claim_type": {"type": "string"},
+        "claimed_value": {"type": "number"},
+        "verdict": {"type": "string", "enum": ["SUPPORTED", "DISPUTED", "UNVERIFIABLE", "EXAGGERATED"]},
+        "empirical_median": {"type": "number", "nullable": true},
+        "spread_pct": {"type": "number", "nullable": true},
+        "confidence": {"type": "string", "nullable": true},
+        "summary": {"type": "string", "nullable": true}
+      },
+      "required": ["project_id", "claim_type", "claimed_value", "verdict"]
+    },
+    "SpatialCompsCard": {
+      "description": "Empirical spatial pricing benchmark card presenting registered transaction IQR spread and markup analysis.",
+      "properties": {
+        "project_id": {"type": "integer"},
+        "median_rate_sqft": {"type": "number", "nullable": true},
+        "p25": {"type": "number", "nullable": true},
+        "p75": {"type": "number", "nullable": true},
+        "iqr": {"type": "number", "nullable": true},
+        "sample_size": {"type": "integer"},
+        "benchmark_tier": {"type": "string", "nullable": true},
+        "unbooked_markup_pct": {"type": "number", "nullable": true},
+        "statewide_markup_baseline_pct": {"type": "number", "default": 12.63}
+      },
+      "required": ["project_id", "sample_size"]
+    },
+    "ClusterSplitCard": {
+      "description": "Developer entity resolution card highlighting partitioned geographic clusters and homonym disambiguation.",
+      "properties": {
+        "promoter_name": {"type": "string"},
+        "resolution": {"type": "string", "default": "PARTITIONED_MULTI_CLUSTER"},
+        "is_multi_cluster": {"type": "boolean", "default": true},
+        "clusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "cluster_id": {"type": "string"},
+              "district": {"type": "string"},
+              "schemes_count": {"type": "integer"},
+              "project_ids": {"type": "array", "items": {"type": "integer"}},
+              "sample_projects": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["district", "project_ids"]
+          }
+        }
+      },
+      "required": ["promoter_name", "clusters"]
+    },
+    "AuditLeadsCard": {
+      "description": "Forensic audit card cataloging statutory filing discrepancies, cost drop anomalies, and uningested disclosure alerts.",
+      "properties": {
+        "project_id": {"type": "integer"},
+        "total_leads": {"type": "integer"},
+        "critical_count": {"type": "integer"},
+        "high_count": {"type": "integer"},
+        "has_skipped_uningested": {"type": "boolean"},
+        "leads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "category": {"type": "string"},
+              "severity": {"type": "string"},
+              "title": {"type": "string"},
+              "detail": {"type": "string"},
+              "evidence_source": {"type": "string"}
+            },
+            "required": ["severity", "title"]
+          }
+        }
+      },
+      "required": ["project_id", "total_leads", "has_skipped_uningested"]
+    },
+    "ProjectDisambiguationCard": {
+      "description": "Candidate disambiguation card presenting exact or fuzzy project matches with clickable follow-up prompts.",
+      "properties": {
+        "query": {"type": "string"},
+        "match_type": {"type": "string", "enum": ["exact", "fuzzy"]},
+        "candidates": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "properties": {
+              "project_id": {"type": "integer"},
+              "name": {"type": "string"},
+              "district": {"type": "string", "nullable": true},
+              "promoter_name": {"type": "string", "nullable": true},
+              "match_type": {"type": "string", "enum": ["exact", "fuzzy"]},
+              "user_message": {"type": "string"}
+            },
+            "required": ["project_id", "name", "match_type", "user_message"]
+          }
+        },
+        "allow_other": {"type": "boolean", "default": true},
+        "other_label": {"type": "string", "default": "Other (type something else)"}
+      },
+      "required": ["query", "match_type", "candidates", "allow_other"]
+    },
+    "MarketScreenTable": {
+      "description": "Screened Gujarat RERA projects table backed by indexed project_summaries and canonical truth badges.",
+      "properties": {
+        "district": {"type": "string", "nullable": true},
+        "project_type": {"type": "string", "nullable": true},
+        "total_matched": {"type": "integer"},
+        "rows": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "project_id": {"type": "integer"},
+              "name": {"type": "string"},
+              "district": {"type": "string", "nullable": true},
+              "project_type": {"type": "string", "nullable": true},
+              "avg_price_sqft": {"type": "number", "nullable": true},
+              "absorption_pct": {"type": "number", "nullable": true},
+              "status_badge": {"type": "string"}
+            },
+            "required": ["project_id", "name", "status_badge"]
+          }
+        }
+      },
+      "required": ["total_matched", "rows"]
+    },
+    "MarketStatsCard": {
+      "description": "Macro micro-market aggregate statistics card grounded in [agg:] scalar evidence.",
+      "properties": {
+        "district": {"type": "string", "nullable": true},
+        "aggregates": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "value": {"type": ["number", "integer", "string", "null"]},
+              "label": {"type": "string"},
+              "unit": {"type": "string", "nullable": true}
+            },
+            "required": ["value", "label"]
+          }
+        }
+      },
+      "required": ["aggregates"]
+    }
+  }
+}

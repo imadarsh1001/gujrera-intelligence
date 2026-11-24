@@ -80,6 +80,7 @@ from real_estate_intelligence.forensic_agent import (
     create_forensic_graph,
     get_llm,
 )
+from real_estate_intelligence.forensic_agent.llm_gateway import get_router_llm, get_synthesis_llm
 from real_estate_intelligence.forensic_agent.guardrails import _scrub_text
 from ag_ui.core.types import RunAgentInput
 from ag_ui.encoder import EventEncoder
@@ -100,6 +101,7 @@ class AppState:
     agentic_copilot: Optional[AgenticCopilot] = None
     agent_checkpointer: Any = MemorySaver()
     agent_llm_override: Optional[Any] = None
+    agent_router_llm_override: Optional[Any] = None
     markup_spread_cache: Optional[Dict[str, Any]] = None
     zombie_radar_cache: Optional[List[Dict[str, Any]]] = None
     developer_clusters_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
@@ -118,6 +120,7 @@ class AppState:
         cls.agentic_copilot = AgenticCopilot(cls.mcp_server)
         cls.agent_checkpointer = MemorySaver()
         cls.agent_llm_override = None
+        cls.agent_router_llm_override = None
         cls.markup_spread_cache = None
         cls.zombie_radar_cache = None
         cls.developer_clusters_cache = OrderedDict()
@@ -852,12 +855,32 @@ async def api_forensic_agent(input_data: RunAgentInput, request: Request):
         )
 
     # Scrub PII from input_data.messages before calling agent.run to protect initial checkpoint
+    def _scrub_message_content(content: Any) -> Any:
+        if isinstance(content, str):
+            return _scrub_text(content)
+        if isinstance(content, list):
+            new_list = []
+            for item in content:
+                if isinstance(item, str):
+                    new_list.append(_scrub_text(item))
+                elif isinstance(item, dict):
+                    scrubbed_item = dict(item)
+                    if "text" in scrubbed_item and isinstance(scrubbed_item["text"], str):
+                        scrubbed_item["text"] = _scrub_text(scrubbed_item["text"])
+                    if "content" in scrubbed_item and isinstance(scrubbed_item["content"], str):
+                        scrubbed_item["content"] = _scrub_text(scrubbed_item["content"])
+                    new_list.append(scrubbed_item)
+                else:
+                    new_list.append(item)
+            return new_list
+        return content
+
     if hasattr(input_data, "messages") and input_data.messages:
         for m in input_data.messages:
-            if hasattr(m, "content") and isinstance(m.content, str):
-                m.content = _scrub_text(m.content)
-            elif isinstance(m, dict) and "content" in m and isinstance(m["content"], str):
-                m["content"] = _scrub_text(m["content"])
+            if hasattr(m, "content"):
+                m.content = _scrub_message_content(m.content)
+            elif isinstance(m, dict) and "content" in m:
+                m["content"] = _scrub_message_content(m["content"])
 
     # Restrict input_data.state to allowed public input keys only (never allow injection of internal state)
     if hasattr(input_data, "state") and isinstance(input_data.state, dict):
@@ -869,12 +892,22 @@ async def api_forensic_agent(input_data: RunAgentInput, request: Request):
     request_con = get_connection(db_path, read_only=True)
 
     tools, teardown_tools = build_forensic_tools(request_con)
-    llm, offline_mode = get_llm(llm_override=getattr(AppState, "agent_llm_override", None))
+    llm_override = getattr(AppState, "agent_llm_override", None)
+    router_override = getattr(AppState, "agent_router_llm_override", None)
+    if llm_override is None:
+        llm, offline_mode = get_synthesis_llm()
+        router_llm, router_offline = get_router_llm(llm_override=router_override)
+        if router_override is not None and not router_offline:
+            offline_mode = False
+    else:
+        llm, offline_mode = get_llm(llm_override=llm_override)
+        router_llm = router_override
 
     graph = create_forensic_graph(
         tools=tools,
         checkpointer=AppState.agent_checkpointer,
         llm=llm,
+        router_llm=router_llm,
         offline_mode=offline_mode,
         con=request_con,
     )

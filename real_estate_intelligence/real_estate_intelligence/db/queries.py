@@ -3,11 +3,15 @@
 Single source of truth for SQL operations across API servers and CLI tools.
 """
 
+from collections import OrderedDict
 from datetime import datetime, timezone
+import difflib
 import json
+from pathlib import Path
 import re
 import sqlite3
-from typing import Any, Dict, List, Optional, Tuple, Union
+import threading
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from .redaction import redact_payload, redact_record, redact_value
 
@@ -206,6 +210,156 @@ def get_project_truth_flags(con: sqlite3.Connection, pid: int) -> Dict[str, Any]
     }
 
 
+_FUZZY_INDEX_CACHE: "OrderedDict[Tuple[str, int, int], Dict[str, Any]]" = OrderedDict()
+_FUZZY_CACHE_LOCK = threading.Lock()
+_FUZZY_CACHE_MAX = 4
+_FUZZY_MIN_SCORE = 0.58
+
+
+def _norm_fuzzy(text: Any) -> str:
+    if not text:
+        return ""
+    cleaned = re.sub(r"[^a-z0-9\s]", " ", str(text).lower())
+    return " ".join(cleaned.split())
+
+
+def _char_trigrams(norm_text: str) -> Set[str]:
+    if not norm_text:
+        return set()
+    padded = f" {norm_text} "
+    if len(padded) < 3:
+        return {padded}
+    return {padded[i : i + 3] for i in range(len(padded) - 2)}
+
+
+def _token_window_ratio(q_norm: str, target_norm: str) -> float:
+    if not q_norm or not target_norm:
+        return 0.0
+    full_ratio = difflib.SequenceMatcher(None, q_norm, target_norm).ratio()
+    q_tokens = q_norm.split()
+    t_tokens = target_norm.split()
+    k = len(q_tokens)
+    best_win = 0.0
+    if k > 0 and len(t_tokens) >= k:
+        for i in range(len(t_tokens) - k + 1):
+            win = " ".join(t_tokens[i : i + k])
+            r = difflib.SequenceMatcher(None, q_norm, win).ratio()
+            if r > best_win:
+                best_win = r
+    return max(full_ratio, best_win)
+
+
+def _get_db_cache_key(con: sqlite3.Connection) -> Optional[Tuple[str, int, int]]:
+    try:
+        rows = con.execute("PRAGMA database_list").fetchall()
+        for r in rows:
+            db_name = r[1] if len(r) > 1 else ""
+            file_str = r[2] if len(r) > 2 else ""
+            if db_name == "main" and file_str and file_str != ":memory:":
+                p = Path(file_str)
+                if p.is_file():
+                    st = p.stat()
+                    return (str(p.resolve()), st.st_mtime_ns, st.st_size)
+    except Exception:
+        pass
+    return None
+
+
+def _build_trigram_index(con: sqlite3.Connection) -> Dict[str, Any]:
+    rows = con.execute(
+        "SELECT project_id, name, district, promoter_name FROM project_summaries"
+    ).fetchall()
+    inverted: Dict[str, Set[int]] = {}
+    docs: Dict[int, Tuple[str, str, str]] = {}
+    for r in rows:
+        pid = int(r["project_id"] if isinstance(r, sqlite3.Row) else r[0])
+        name_n = _norm_fuzzy(r["name"] if isinstance(r, sqlite3.Row) else r[1])
+        dist_n = _norm_fuzzy(r["district"] if isinstance(r, sqlite3.Row) else r[2])
+        prom_n = _norm_fuzzy(r["promoter_name"] if isinstance(r, sqlite3.Row) else r[3])
+        docs[pid] = (name_n, dist_n, prom_n)
+        for tri in _char_trigrams(f"{name_n} {prom_n} {dist_n}".strip()):
+            inverted.setdefault(tri, set()).add(pid)
+    return {"inverted": inverted, "docs": docs}
+
+
+def _fuzzy_search_project_summaries(
+    con: sqlite3.Connection,
+    clean_q: str,
+    district: Optional[str],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    q_norm = _norm_fuzzy(clean_q)
+    if len(q_norm) < 2:
+        return []
+    q_trigrams = _char_trigrams(q_norm)
+    if not q_trigrams:
+        return []
+
+    cache_key = _get_db_cache_key(con)
+    index: Optional[Dict[str, Any]] = None
+    if cache_key is not None:
+        with _FUZZY_CACHE_LOCK:
+            if cache_key in _FUZZY_INDEX_CACHE:
+                index = _FUZZY_INDEX_CACHE[cache_key]
+                _FUZZY_INDEX_CACHE.move_to_end(cache_key)
+    if index is None:
+        index = _build_trigram_index(con)
+        if cache_key is not None:
+            with _FUZZY_CACHE_LOCK:
+                _FUZZY_INDEX_CACHE[cache_key] = index
+                _FUZZY_INDEX_CACHE.move_to_end(cache_key)
+                while len(_FUZZY_INDEX_CACHE) > _FUZZY_CACHE_MAX:
+                    _FUZZY_INDEX_CACHE.popitem(last=False)
+
+    inverted: Dict[str, Set[int]] = index["inverted"]
+    docs: Dict[int, Tuple[str, str, str]] = index["docs"]
+    dist_filter = _norm_fuzzy(district) if (district and district.strip()) else None
+
+    overlap_counts: Dict[int, int] = {}
+    for tri in q_trigrams:
+        for pid in inverted.get(tri, ()):
+            overlap_counts[pid] = overlap_counts.get(pid, 0) + 1
+
+    if not overlap_counts:
+        return []
+
+    # Candidate pool of top 80 trigram-overlap entries (respecting district filter)
+    top_candidates = sorted(overlap_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:100]
+    scored: List[Tuple[float, int]] = []
+    for pid, _ in top_candidates:
+        name_n, dist_n, prom_n = docs[pid]
+        if dist_filter and dist_n != dist_filter:
+            continue
+        score = max(
+            _token_window_ratio(q_norm, name_n),
+            _token_window_ratio(q_norm, prom_n),
+            _token_window_ratio(q_norm, f"{name_n} {dist_n}".strip()),
+        )
+        if score >= _FUZZY_MIN_SCORE:
+            scored.append((score, pid))
+
+    if not scored:
+        return []
+
+    scored.sort(key=lambda sp: (-sp[0], sp[1]))
+    top_pids = [pid for _, pid in scored[: min(5, limit)]]
+
+    placeholders = ",".join("?" for _ in top_pids)
+    rows = con.execute(
+        f"SELECT * FROM project_summaries WHERE project_id IN ({placeholders})",
+        top_pids,
+    ).fetchall()
+    by_pid = {int(dict(r)["project_id"]): dict(r) for r in rows}
+
+    ordered_rows: List[Dict[str, Any]] = []
+    for pid in top_pids:
+        row = by_pid.get(pid)
+        if row is not None:
+            row["match_type"] = "fuzzy"
+            ordered_rows.append(row)
+    return redact_payload(ordered_rows)
+
+
 def search_project_summaries(
     con: sqlite3.Connection,
     q: Optional[str],
@@ -215,6 +369,7 @@ def search_project_summaries(
     """Query project_summaries across name, promoter_name, registration_number, district, taluka.
     
     Escapes wildcard characters and matches district case-insensitively.
+    Falls back to cached trigram + token-aware fuzzy matching ONLY when exact LIKE returns 0 rows.
     Scrubbed via redact_payload before returning.
     """
     clean_q = (q or "").strip()
@@ -246,7 +401,12 @@ def search_project_summaries(
 
     cur = con.execute(sql, params)
     rows = [dict(r) for r in cur.fetchall()]
-    return redact_payload(rows)
+    if rows:
+        for r in rows:
+            r["match_type"] = "exact"
+        return redact_payload(rows)
+
+    return _fuzzy_search_project_summaries(con, clean_q, district, clamped_limit)
 
 
 def sort_explore_rows(

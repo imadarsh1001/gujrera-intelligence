@@ -131,7 +131,12 @@ def build_forensic_tools(
     ) -> Dict[str, Any]:
         """Verify broker sales price or absorption claims against registered transactions and spatial benchmarks."""
         pid = int(project_id)
-        res = claims_verifier.verify(pid, claim_type, claimed_value, asset_class=asset_class)
+        res = claims_verifier.verify_claim(
+            pid,
+            claimed_rate_sqft=claimed_value if claim_type != "absorption_pct" else None,
+            claimed_sold_pct=claimed_value if claim_type == "absorption_pct" else None,
+            asset_class=asset_class,
+        )
         return wrap_tool_response(
             res,
             project_ids=[pid],
@@ -142,12 +147,11 @@ def build_forensic_tools(
     @tool
     def get_spatial_pricing_benchmark(
         project_id: int,
-        radius_km: float = 3.0,
         asset_class: str = "Residential",
     ) -> Dict[str, Any]:
-        """Compute empirical spatial pricing distribution within a geographic micro-market radius."""
+        """Compute empirical spatial pricing distribution within registered micro-market transactions."""
         pid = int(project_id)
-        res = spatial_pricer.benchmark(pid, radius_km=radius_km, asset_class=asset_class)
+        res = spatial_pricer.benchmark(pid, asset_class=asset_class)
         return wrap_tool_response(
             res,
             project_ids=[pid],
