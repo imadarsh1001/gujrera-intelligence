@@ -37,6 +37,7 @@ def get_llm(
     temperature: float = 0.0,
     disable_streaming: bool = True,
     max_tokens: Optional[int] = None,
+    json_mode: bool = False,
 ) -> Tuple[Optional[Any], bool]:
     """Obtain the chat LLM instance or determine offline fallback mode.
 
@@ -46,6 +47,7 @@ def get_llm(
         temperature: Sampling temperature (default 0.0 for deterministic forensic analysis).
         disable_streaming: Enforce synchronous execution for guardrail enforcement.
         max_tokens: Optional completion token cap.
+        json_mode: When True, request JSON object output via response_format.
 
     Returns:
         (llm_instance, offline_mode_bool)
@@ -59,7 +61,8 @@ def get_llm(
     account_id = os.getenv("CF_ACCOUNT_ID", "").strip()
     api_token = os.getenv("CF_API_TOKEN", "").strip()
     gateway_id = os.getenv("CF_GATEWAY_ID", "").strip()
-    model = model_name or os.getenv("CF_MODEL_NAME", "gpt-4o-mini")
+    raw_model = model_name or os.getenv("CF_MODEL_NAME", "gpt-4o-mini")
+    model = raw_model.strip().strip('"').strip("'")
 
     base_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
     headers = {"cf-aig-gateway-id": gateway_id}
@@ -74,6 +77,8 @@ def get_llm(
     }
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
+    if json_mode:
+        kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
 
     llm = ChatOpenAI(**kwargs)
     return llm, False
@@ -82,16 +87,18 @@ def get_llm(
 def get_router_llm(
     llm_override: Optional[Any] = None,
     temperature: float = 0.0,
-    max_tokens: int = 384,
+    max_tokens: int = 512,
 ) -> Tuple[Optional[Any], bool]:
     """Obtain the fast router LLM for coordinator routing."""
-    model = os.getenv("CF_ROUTER_MODEL") or "@cf/ibm-granite/granite-4.0-h-micro"
+    raw_model = os.getenv("CF_ROUTER_MODEL", "").strip().strip('"').strip("'")
+    model = raw_model or "@cf/ibm-granite/granite-4.0-h-micro"
     return get_llm(
         llm_override=llm_override,
         model_name=model,
         temperature=temperature,
         disable_streaming=True,
         max_tokens=max_tokens,
+        json_mode=True,
     )
 
 
@@ -101,7 +108,8 @@ def get_synthesis_llm(
     max_tokens: int = 3072,
 ) -> Tuple[Optional[Any], bool]:
     """Obtain the synthesis LLM for evidence-grounded answer generation."""
-    model = os.getenv("CF_SYNTHESIS_MODEL") or os.getenv("CF_MODEL_NAME", "gpt-4o-mini")
+    raw_model = os.getenv("CF_SYNTHESIS_MODEL") or os.getenv("CF_MODEL_NAME", "gpt-4o-mini")
+    model = raw_model.strip().strip('"').strip("'")
     return get_llm(
         llm_override=llm_override,
         model_name=model,

@@ -49,6 +49,17 @@ class SpecialistFinding(BaseModel):
     tool_call_count: int = 1
 
 
+def _start_interrupt_timer(con: Any, timeout_s: float) -> Optional[threading.Timer]:
+    """Start a daemon watchdog timer calling con.interrupt if supported by the connection."""
+    interrupt_fn = getattr(con, "interrupt", None)
+    if not callable(interrupt_fn):
+        return None
+    timer = threading.Timer(timeout_s, interrupt_fn)
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
 def _truncate_summary(summary: Dict[str, Any], max_bytes: int = 1500) -> Dict[str, Any]:
     """Ensure summary JSON fits within max_bytes budget."""
     try:
@@ -95,9 +106,7 @@ def due_diligence_specialist(item: Dict[str, Any]) -> Dict[str, Any]:
     asset_class = task.get("asset_class", "Residential")
 
     con = get_connection(db_path, read_only=True)
-    timer = threading.Timer(timeout_s, con.interrupt)
-    timer.daemon = True
-    timer.start()
+    timer = _start_interrupt_timer(con, timeout_s)
 
     calls = 0
     try:
@@ -267,7 +276,8 @@ def due_diligence_specialist(item: Dict[str, Any]) -> Dict[str, Any]:
         )
         return {"findings": [finding.model_dump()], "tool_call_count": max(calls, 1)}
     finally:
-        timer.cancel()
+        if timer is not None:
+            timer.cancel()
         try:
             con.close()
         except Exception:
@@ -299,9 +309,7 @@ def pilot_auditor_specialist(item: Dict[str, Any]) -> Dict[str, Any]:
     timeout_s = float(task.get("timeout_s", 8.0))
 
     con = get_connection(db_path, read_only=True)
-    timer = threading.Timer(timeout_s, con.interrupt)
-    timer.daemon = True
-    timer.start()
+    timer = _start_interrupt_timer(con, timeout_s)
 
     calls = 0
     try:
@@ -377,7 +385,8 @@ def pilot_auditor_specialist(item: Dict[str, Any]) -> Dict[str, Any]:
         )
         return {"findings": [finding.model_dump()], "tool_call_count": max(calls, 1)}
     finally:
-        timer.cancel()
+        if timer is not None:
+            timer.cancel()
         try:
             con.close()
         except Exception:
@@ -411,9 +420,7 @@ def promoter_contagion_specialist(item: Dict[str, Any]) -> Dict[str, Any]:
     timeout_s = float(task.get("timeout_s", 8.0))
 
     con = get_connection(db_path, read_only=True)
-    timer = threading.Timer(timeout_s, con.interrupt)
-    timer.daemon = True
-    timer.start()
+    timer = _start_interrupt_timer(con, timeout_s)
 
     calls = 0
     try:
@@ -486,7 +493,8 @@ def promoter_contagion_specialist(item: Dict[str, Any]) -> Dict[str, Any]:
         )
         return {"findings": [finding.model_dump()], "tool_call_count": max(calls, 1)}
     finally:
-        timer.cancel()
+        if timer is not None:
+            timer.cancel()
         try:
             con.close()
         except Exception:
@@ -528,9 +536,7 @@ def market_analyst_specialist(item: Dict[str, Any]) -> Dict[str, Any]:
     timeout_s = float(task.get("timeout_s", 8.0))
 
     con = get_connection(db_path, read_only=True)
-    timer = threading.Timer(timeout_s, con.interrupt)
-    timer.daemon = True
-    timer.start()
+    timer = _start_interrupt_timer(con, timeout_s)
 
     calls = 0
     try:
@@ -682,7 +688,8 @@ def market_analyst_specialist(item: Dict[str, Any]) -> Dict[str, Any]:
         )
         return {"findings": [finding.model_dump()], "tool_call_count": max(calls, 1)}
     finally:
-        timer.cancel()
+        if timer is not None:
+            timer.cancel()
         try:
             con.close()
         except Exception:

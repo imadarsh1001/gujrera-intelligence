@@ -18,6 +18,9 @@ for p in sys_paths:
     if p not in sys.path:
         sys.path.insert(0, p)
 
+# Prevent workspace .env GUJRERA_DB_READ_ONLY=1 from forcing writable temp test DBs read-only
+os.environ.setdefault("GUJRERA_DB_READ_ONLY", "0")
+
 from api.index import AppState, app
 from real_estate_intelligence.graph.network import KnowledgeGraph
 

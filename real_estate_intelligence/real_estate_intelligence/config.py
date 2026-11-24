@@ -34,7 +34,10 @@ def _load_env_file() -> None:
                     if not line or line.startswith("#") or "=" not in line:
                         continue
                     key, value = line.split("=", 1)
-                    os.environ.setdefault(key.strip(), value.strip())
+                    val = value.strip()
+                    if len(val) >= 2 and ((val[0] == '"' and val[-1] == '"') or (val[0] == "'" and val[-1] == "'")):
+                        val = val[1:-1]
+                    os.environ.setdefault(key.strip(), val)
             except OSError:
                 pass
             break

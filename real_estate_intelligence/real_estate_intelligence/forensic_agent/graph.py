@@ -67,17 +67,18 @@ STRICT CITATION & HONESTY RULES:
 6. NEVER substitute Spatial Micro-Market IQR (SpatialEmpiricalPricer) for a project's own trailing booked benchmark (verify_sales_claim). Label both distinctly when present (e.g. "Project Trailing Booked Benchmark" vs "Micro-Market Spatial IQR"), and omit any claim verdict if verify_sales_claim did not run.
 7. When citing macro market aggregates computed by market_analyst, use the exact marker [agg:<id>] matching gathered aggregate keys (e.g. [agg:screen_count], [agg:district_median_price], [agg:avg_absorption_pct], [agg:markup_spread_pct], [agg:zombie_count]).
 8. For general Gujarat RERA Q&A with no queried project/market tools, do NOT fabricate [pid:...], [bu:...], or [agg:...] citations.
-9. Provide factual, quantitative, and concise forensic evaluations."""
+9. Provide factual, quantitative, and concise forensic evaluations.
+10. All specialist database tools have ALREADY been executed and their outputs are in GATHERED FORENSIC EVIDENCE. You have NO tools to call here; NEVER attempt or narrate tool calls (never write "Attempting to run..." or "Attempting ..."). Synthesize strictly from GATHERED FORENSIC EVIDENCE, or plainly state any reported specialist error."""
 
 ROUTER_SYSTEM_PROMPT = """Classify the Gujarat RERA due-diligence user query into strict JSON only (no markdown, no explanation).
 Schema:
 {"intent": "greeting|off_topic|general_rera_qa|project_dd|compare|promoter|pilot_audit|market_screen|followup", "project_names": [], "promoter_names": [], "district": null, "claimed_rate": null, "project_type": "Residential", "direct_reply": null}
 
 Rules:
-- greeting: hi/hello/help/thanks. Set direct_reply (1-2 sentences).
+- greeting: hi/hello/help/thanks, OR conversational capability questions (e.g., "how can you help me check a flat in Ahmedabad?", "what can you do?") with NO specific project name or [pid:<id>]. Never put generic nouns ("flat", "apartment", "home", "project") in project_names. Set direct_reply (1-2 sentences).
 - off_topic: unrelated to Gujarat real estate, RERA, projects, developers, or pricing. Set polite direct_reply (1-2 sentences).
 - general_rera_qa: general questions about RERA law, Section 4(2)(l)(D), Form 1/3/5, BU NOC concepts without asking about a specific scheme/district.
-- project_dd: inspecting a project, BU cert, or verifying a price claim on a project.
+- project_dd: inspecting a specific named project or [pid:<id>], BU cert, or verifying a price claim on a project.
 - compare: comparing 2+ projects.
 - promoter: promoter/developer portfolio, sister schemes, cluster split, or contagion.
 - pilot_audit: explicit forensic audit, escrow, Form 5, cost drops, or pilot_deep verification.
@@ -104,9 +105,38 @@ _AFTER_PRICE_CUE_RE = re.compile(
 )
 _EXPLICIT_PID_RE = re.compile(r"\[pid:(\d+)\]|(?:project|scheme|id)\s*#?\s*(\d{4,6})\b", re.IGNORECASE)
 _GREETING_RE = re.compile(
-    r"^\s*(?:hi|hello|hey|help|namaste|good\s+(?:morning|afternoon|evening))[!.\s?]*$",
+    r"^\s*(?:hi|hello|hey|help|namaste|thanks|thank\s+you|good\s+(?:morning|afternoon|evening))(?:\s+(?:there|bot|assistant))?[!.\s?]*$",
     re.IGNORECASE,
 )
+_META_HELP_RE = re.compile(
+    r"\b(?:how\s+(?:can|do|would)\s+you\s+help|what\s+can\s+you\s+do|what\s+do\s+you\s+do|how\s+does\s+this\s+work|what\s+are\s+your\s+capabilities)\b",
+    re.IGNORECASE,
+)
+_GENERIC_QUERY_WORDS_RE = re.compile(
+    r"\b(?:hi|hello|hey|please|help|me|you|i|we|can|do|would|how|what|are|your|capabilities|check|inspect|analyze|verify|buy|buying|find|looking|for|a|an|the|in|of|to|on|about|this|work|flat|flats|apartment|apartments|house|home|property|properties|scheme|project|projects|deal|rate|price)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_greeting_or_meta_query(raw_text: str) -> bool:
+    """Return True for greetings or capability questions without a specific named project."""
+    if _GREETING_RE.match(raw_text):
+        return True
+    if not _META_HELP_RE.search(raw_text):
+        return False
+    if _EXPLICIT_PID_RE.search(raw_text):
+        return False
+    if re.search(
+        r"\b(?:audit|compare|versus|vs|screen|market\s+stats|market\s+overview|promoter|portfolio|contagion|form\s*[135]|escrow)\b",
+        raw_text,
+        re.IGNORECASE,
+    ):
+        return False
+    residual = _GENERIC_QUERY_WORDS_RE.sub(" ", raw_text)
+    for d in _GUJARAT_DISTRICTS:
+        residual = re.sub(rf"\b{re.escape(d)}\b", " ", residual, flags=re.IGNORECASE)
+    residual = re.sub(r"[^A-Za-z0-9]+", "", residual)
+    return len(residual) < 2
 
 
 class RouterDecision(BaseModel):
@@ -220,7 +250,7 @@ def _clean_search_phrase(raw_text: str) -> str:
 
 def _detect_deterministic_intent(raw_text: str, pid_count: int = 0, active_pid: Optional[int] = None) -> str:
     """Deterministic fallback intent classification used for fast-path and offline execution."""
-    if _GREETING_RE.match(raw_text):
+    if _is_greeting_or_meta_query(raw_text):
         return "greeting"
     if re.search(r"\b(promoter|developer|builder|contagion|cluster|portfolio|sister\s+scheme)\b", raw_text, re.IGNORECASE):
         return "promoter"
@@ -254,15 +284,30 @@ def _invoke_semantic_router(
         SystemMessage(content=ROUTER_SYSTEM_PROMPT),
         HumanMessage(content=f"{ctx_hint}\nUser query: {raw_text}"),
     ]
+    content = ""
+    finish_reason = None
     try:
         resp = router_model.invoke(messages, config={"metadata": {"emit-messages": False}})
+        meta = getattr(resp, "response_metadata", None) or {}
+        finish_reason = meta.get("finish_reason") or meta.get("normalized_finish_reason")
         content = str(getattr(resp, "content", "") or "").strip()
-        # Strip optional markdown code fences
+        if not content:
+            raise ValueError(f"Empty router response (finish_reason={finish_reason!r})")
+        # Strip optional markdown code fences and isolate JSON object
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.IGNORECASE | re.DOTALL).strip()
+        if not content.startswith("{"):
+            json_match = re.search(r"\{.*\}", content, flags=re.DOTALL)
+            if json_match:
+                content = json_match.group(0)
         parsed = json.loads(content)
         return RouterDecision.model_validate(parsed)
     except Exception as e:
-        logger.debug(f"Semantic router fallback triggered: {e}")
+        logger.warning(
+            "Semantic router fallback triggered (%s, finish_reason=%r, raw=%r)",
+            e,
+            finish_reason,
+            content[:200],
+        )
         return None
 
 
@@ -375,10 +420,12 @@ def create_forensic_graph(
             )
         else:
             intent = router_decision.intent
+            if _is_greeting_or_meta_query(raw_text) and intent not in ("greeting", "off_topic"):
+                intent = "greeting"
 
         # 1. Fast direct reply intents (0 DB tools, bypass synthesizer)
         if intent in ("greeting", "off_topic"):
-            if router_decision and router_decision.direct_reply:
+            if router_decision and router_decision.intent == intent and router_decision.direct_reply:
                 reply = _scrub_text(router_decision.direct_reply.strip())
             elif intent == "greeting":
                 reply = (
@@ -580,6 +627,14 @@ def create_forensic_graph(
                     }
                 },
             }
+            cand_summary = ", ".join(
+                f"[pid:{c['project_id']}] {c['name']} ({c.get('district') or 'Gujarat'})"
+                for c in card_candidates
+            )
+            disambig_prompt = (
+                f"Multiple projects matched '{query_label}': {cand_summary}. "
+                "Please select a project from the card below or reply with its [pid:<id>] to run due diligence."
+            )
             return {
                 "planned_tasks": [],
                 "active_project_id": active_pid,
@@ -589,6 +644,8 @@ def create_forensic_graph(
                 "active_playbook": "buyer_due_diligence",
                 "findings": [disambig_finding],
                 "tool_evidence": {"projects": ev_projects},
+                "draft_answer": disambig_prompt,
+                "verification_passed": True,
             }
 
         planned_tasks = []
@@ -627,6 +684,8 @@ def create_forensic_graph(
         tasks = state.get("planned_tasks", [])
         if intent in ("greeting", "off_topic") or (intent == "followup" and not tasks and state.get("draft_answer")):
             return "deliver_answer"
+        if intent == "disambiguation":
+            return "a2ui_emitter"
         if not tasks:
             return "synthesizer"
 
@@ -829,14 +888,20 @@ def create_forensic_graph(
         else:
             user_prompt = (
                 f"GATHERED FORENSIC EVIDENCE:\n{evidence_summary}\n\n"
-                "Please synthesize a verified due-diligence report. "
-                "Remember: keep Project Trailing Booked Benchmark (verify_sales_claim) distinct from Micro-Market Spatial IQR, "
+                "All specialist database tools have already executed above; do NOT invoke or narrate tool calls "
+                "(never write 'Attempting to run...' or 'Attempting...'). "
+                "Synthesize a verified due-diligence report strictly from GATHERED FORENSIC EVIDENCE. "
+                "Keep Project Trailing Booked Benchmark (verify_sales_claim) distinct from Micro-Market Spatial IQR, "
                 "and omit any claim verdict if verify_sales_claim did not run."
             )
         if retry_feedback:
             user_prompt += f"\n\nVERIFIER FEEDBACK FROM PREVIOUS ATTEMPT:\n{retry_feedback}\nYou MUST correct the citation or formatting anomaly."
 
         messages.append(HumanMessage(content=user_prompt))
+
+        if findings and all(isinstance(f, dict) and f.get("status") == "error" for f in findings):
+            draft_text = _synthesize_offline_answer(state, resolved_db_path, con)
+            return {"draft_answer": draft_text}
 
         synthesis_llm, _ = get_synthesis_llm(llm_override=llm)
         tool_call_updates: List[BaseMessage] = []
@@ -863,6 +928,14 @@ def create_forensic_graph(
                     )
                 resp = synthesis_llm.invoke(messages + tool_call_updates, config={"metadata": {"emit-messages": False}})
             draft_text = str(resp.content or "").strip()
+            if not draft_text or (
+                re.match(r"^\s*Attempting\b", draft_text, re.IGNORECASE)
+                and len(draft_text) < 200
+                and "[pid:" not in draft_text
+                and "[agg:" not in draft_text
+            ):
+                logger.warning("Synthesis LLM returned empty or tool-narration stub (%r); falling back to deterministic synthesis.", draft_text[:120])
+                draft_text = _synthesize_offline_answer(state, resolved_db_path, con)
         except Exception as e:
             logger.warning(f"Synthesis LLM call failed, falling back to deterministic synthesis: {e}")
             draft_text = _synthesize_offline_answer(state, resolved_db_path, con)
@@ -946,6 +1019,7 @@ def create_forensic_graph(
             "promoter_contagion_specialist",
             "market_analyst_specialist",
             "synthesizer",
+            "a2ui_emitter",
             "deliver_answer",
         ],
     )
@@ -1081,6 +1155,12 @@ def _synthesize_offline_answer(
     for pid, specs in by_pid.items():
         dd_finding = specs.get("due_diligence", {})
         pilot_finding = specs.get("pilot_auditor", {})
+        if dd_finding and dd_finding.get("status") == "error":
+            sections.append(
+                f"## Statutory Diligence Report: Project {pid}\n"
+                f"- Unavailable: {dd_finding.get('error') or 'Specialist execution error'}"
+            )
+            continue
         card_data = dd_finding.get("card_data") or {}
         truth_flags = card_data.get("dossier_truth", {}).get("truth_flags") or {}
         p_name = card_data.get("dossier_truth", {}).get("project_name") or f"Project {pid}"

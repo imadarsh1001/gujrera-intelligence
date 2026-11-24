@@ -489,3 +489,163 @@ def test_wp3_market_analyst_aggregates_and_a2ui_surfaces(agent_test_env, monkeyp
     assert "[agg:screen_count]" in res_online["messages"][-1].content
     assert "[agg:fake_stat]" not in res_online["messages"][-1].content
     assert "Draft with hallucinated" not in res_online["messages"][-1].content
+
+
+def test_live3_disambiguation_never_calls_synthesis_llm(agent_test_env, monkeypatch):
+    """Regression: disambiguation turns emit ProjectDisambiguationCard + short prompt with 0 synthesis LLM calls."""
+    fake_router = _FakeBindableChatModel(messages=iter([
+        AIMessage(content=json.dumps({
+            "intent": "project_dd",
+            "project_names": ["Shaligrm Prim"],
+            "direct_reply": None,
+        })),
+    ]))
+    fake_synth = _FakeBindableChatModel(messages=iter([
+        AIMessage(content="SHOULD NEVER BE CALLED"),
+    ]))
+
+    monkeypatch.setattr(AppState, "agent_router_llm_override", fake_router)
+    monkeypatch.setattr(AppState, "agent_llm_override", fake_synth)
+
+    client = TestClient(app)
+    res = client.post("/api/agent", json={
+        "run_id": "r_disambig_no_synth",
+        "thread_id": "t_disambig_no_synth",
+        "messages": [{"id": "m1", "role": "user", "content": "Check Shaligrm Prim"}],
+    })
+    assert res.status_code == 200
+    assert fake_synth.call_count == 0, "Synthesis LLM must NEVER be invoked on disambiguation turns"
+    assert "SHOULD NEVER BE CALLED" not in res.text
+
+    events = _parse_sse(res.text)
+    msg_text = _extract_assistant_text(events)
+    assert "Multiple projects matched" in msg_text
+    assert "[pid:9036]" in msg_text
+    assert "Verifier Redaction" not in msg_text
+
+    chk = AppState.agent_checkpointer.get({"configurable": {"thread_id": "t_disambig_no_synth"}})["channel_values"]
+    assert chk["intent"] == "disambiguation"
+    assert chk["verification_passed"] is True
+    assert chk["retry_count"] == 0
+    assert any(s["component"]["type"] == "ProjectDisambiguationCard" for s in chk.get("a2ui_surfaces", []))
+
+
+def test_live2_router_model_config_and_greeting_meta_fallback(agent_test_env, monkeypatch, caplog):
+    """Regression: get_router_llm uses CF_ROUTER_MODEL cleanly and greeting/meta queries never trigger fuzzy search."""
+    from real_estate_intelligence.forensic_agent.llm_gateway import get_router_llm
+
+    monkeypatch.setenv("CF_ACCOUNT_ID", "acc_test")
+    monkeypatch.setenv("CF_API_TOKEN", "tok_test")
+    monkeypatch.setenv("CF_GATEWAY_ID", "gw_test")
+    monkeypatch.setenv("CF_ROUTER_MODEL", '"@cf/ibm-granite/granite-4.0-h-micro"')
+
+    router_llm, offline = get_router_llm()
+    assert offline is False
+    assert router_llm is not None
+    assert router_llm.model_name == "@cf/ibm-granite/granite-4.0-h-micro"
+    assert router_llm.max_tokens >= 512
+
+    # Case A: truncated/empty router response falls back with warning log and detects greeting/meta query
+    broken_router = _FakeBindableChatModel(messages=iter([
+        AIMessage(content="", response_metadata={"finish_reason": "length"}),
+        # Case B: router misclassifies capability question as project_dd with generic noun
+        AIMessage(content=json.dumps({
+            "intent": "project_dd",
+            "project_names": ["flat in Ahmedabad"],
+            "district": "Ahmedabad",
+            "direct_reply": "I can inspect that specific project.",
+        })),
+    ]))
+    fake_synth = _FakeBindableChatModel(messages=iter([
+        AIMessage(content="SHOULD NEVER BE CALLED"),
+    ]))
+    monkeypatch.setattr(AppState, "agent_router_llm_override", broken_router)
+    monkeypatch.setattr(AppState, "agent_llm_override", fake_synth)
+
+    client = TestClient(app)
+    with caplog.at_level("WARNING"):
+        res_a = client.post("/api/agent", json={
+            "run_id": "r_greet_a",
+            "thread_id": "t_greet_a",
+            "messages": [{"id": "m1", "role": "user", "content": "Hey, how can you help me check a flat in Ahmedabad?"}],
+        })
+    assert res_a.status_code == 200
+    assert "Semantic router fallback triggered" in caplog.text
+    assert fake_synth.call_count == 0
+    chk_a = AppState.agent_checkpointer.get({"configurable": {"thread_id": "t_greet_a"}})["channel_values"]
+    assert chk_a["intent"] == "greeting"
+    assert chk_a["verification_passed"] is True
+    assert chk_a["tool_call_count"] == 0
+    surf_a = chk_a.get("a2ui_surfaces", [])
+    assert getattr(surf_a, "value", surf_a) == []
+    assert "GujRERA" in _extract_assistant_text(_parse_sse(res_a.text))
+
+    res_b = client.post("/api/agent", json={
+        "run_id": "r_greet_b",
+        "thread_id": "t_greet_b",
+        "messages": [{"id": "m1", "role": "user", "content": "Hey, how can you help me check a flat in Ahmedabad?"}],
+    })
+    assert res_b.status_code == 200
+    assert fake_synth.call_count == 0
+    chk_b = AppState.agent_checkpointer.get({"configurable": {"thread_id": "t_greet_b"}})["channel_values"]
+    assert chk_b["intent"] == "greeting"
+    assert chk_b["verification_passed"] is True
+    assert chk_b["tool_call_count"] == 0
+    surf_b = chk_b.get("a2ui_surfaces", [])
+    assert getattr(surf_b, "value", surf_b) == []
+
+
+def test_live1_and_live4_online_emit_a2ui_surfaces_and_reject_tool_narration(agent_test_env, monkeypatch):
+    """Regression: live-1 and live-4 emit full A2UI cards online and replace tool-narration stubs."""
+    fake_router = _FakeBindableChatModel(messages=iter([
+        AIMessage(content=json.dumps({
+            "intent": "project_dd",
+            "project_names": [],
+            "claimed_rate": 8200,
+            "direct_reply": None,
+        })),
+        AIMessage(content=json.dumps({
+            "intent": "market_screen",
+            "district": "Ahmedabad",
+            "project_type": "Residential",
+            "direct_reply": None,
+        })),
+    ]))
+    # First synthesis returns an aborted tool-narration stub -> must fall back to verified deterministic report
+    fake_synth = _FakeBindableChatModel(messages=iter([
+        AIMessage(content="Attempting to run verify_sales_claim for project 9036."),
+        AIMessage(content="Ahmedabad residential screening matched [agg:screen_count] projects."),
+    ]))
+    monkeypatch.setattr(AppState, "agent_router_llm_override", fake_router)
+    monkeypatch.setattr(AppState, "agent_llm_override", fake_synth)
+
+    client = TestClient(app)
+
+    # live-1
+    r1 = client.post("/api/agent", json={
+        "run_id": "r_live1_reg",
+        "thread_id": "t_live1_reg",
+        "messages": [{"id": "m1", "role": "user", "content": "Analyze project 9036 and check if 8,200 per sqft is fair"}],
+    })
+    assert r1.status_code == 200
+    txt1 = _extract_assistant_text(_parse_sse(r1.text))
+    assert "Attempting to run" not in txt1
+    assert "[pid:9036]" in txt1
+    chk1 = AppState.agent_checkpointer.get({"configurable": {"thread_id": "t_live1_reg"}})["channel_values"]
+    assert chk1["verification_passed"] is True
+    types1 = {s["component"]["type"] for s in chk1.get("a2ui_surfaces", [])}
+    assert {"DossierTruthCard", "SpatialCompsCard", "ClaimVerdictCard"}.issubset(types1)
+
+    # live-4
+    r4 = client.post("/api/agent", json={
+        "run_id": "r_live4_reg",
+        "thread_id": "t_live4_reg",
+        "messages": [{"id": "m1", "role": "user", "content": "Screen residential projects in Ahmedabad and show market stats"}],
+    })
+    assert r4.status_code == 200
+    txt4 = _extract_assistant_text(_parse_sse(r4.text))
+    assert "[agg:screen_count]" in txt4
+    chk4 = AppState.agent_checkpointer.get({"configurable": {"thread_id": "t_live4_reg"}})["channel_values"]
+    assert chk4["verification_passed"] is True
+    types4 = {s["component"]["type"] for s in chk4.get("a2ui_surfaces", [])}
+    assert {"MarketScreenTable", "MarketStatsCard"}.issubset(types4)
