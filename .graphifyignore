@@ -10,6 +10,7 @@ webfonts/
 
 # Large generated data assets
 gujarat_map.json
+**/tests/fixtures/*.json
 
 # Package caches & environments
 .uv-cache/
